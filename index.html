@@ -18,7 +18,7 @@
     }
 
     .wrap {
-      max-width: 900px;
+      max-width: 980px;
       margin: 0 auto;
       padding: 18px;
     }
@@ -79,6 +79,13 @@
       margin-bottom: 12px;
     }
 
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
     label {
       display: block;
       font-size: 13px;
@@ -93,6 +100,11 @@
       border-radius: 12px;
       font-size: 16px;
       background: #fff;
+    }
+
+    input[readonly] {
+      background: #f9fafb;
+      color: #111827;
     }
 
     textarea {
@@ -299,8 +311,8 @@
       min-height: 90px;
     }
 
-    @media (max-width: 700px) {
-      .row, .acciones, .acciones-4 {
+    @media (max-width: 800px) {
+      .row, .row-3, .acciones, .acciones-4 {
         grid-template-columns: 1fr;
       }
 
@@ -314,7 +326,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Registro de Patentes KRUGGER</h1>
-      <div class="sub">Frontend en GitHub Pages + backend en Apps Script + evidencia en Drive + OCR local mejorado.</div>
+      <div class="sub">Buscar patente rellena la ficha. Registrar movimiento deja la trazabilidad oficial en la planilla.</div>
 
       <div class="tipo-box">
         <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
@@ -340,6 +352,32 @@
         <div>
           <label for="acompanante">Acompañante</label>
           <input id="acompanante" type="text" placeholder="Opcional" />
+        </div>
+      </div>
+
+      <div class="row-3">
+        <div>
+          <label for="nombreInfo">Nombre</label>
+          <input id="nombreInfo" type="text" readonly />
+        </div>
+        <div>
+          <label for="jefaturaInfo">Jefatura</label>
+          <input id="jefaturaInfo" type="text" readonly />
+        </div>
+        <div>
+          <label for="tipoVehiculoInfo">Tipo vehículo</label>
+          <input id="tipoVehiculoInfo" type="text" readonly />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="estadoInfo">Estado base</label>
+          <input id="estadoInfo" type="text" readonly />
+        </div>
+        <div>
+          <label for="plantaInfo">Planta</label>
+          <input id="plantaInfo" type="text" readonly />
         </div>
       </div>
 
@@ -386,7 +424,7 @@
         </div>
 
         <div class="nota">
-          Al capturar la foto, el sistema intentará leer la patente automáticamente. La primera lectura puede tardar más que las siguientes.
+          Al capturar la foto, el sistema intenta leer la patente automáticamente. Si encuentra datos, rellena la ficha. Recién al apretar “Registrar movimiento” queda grabado en la planilla.
         </div>
       </div>
     </div>
@@ -401,6 +439,39 @@
     let ocrWorker = null;
     let ocrInicializado = false;
     let ocrEnProceso = false;
+    let currentLookup = null;
+    let lastSearchedPatente = '';
+
+    const patenteInput = () => document.getElementById('patente');
+    const nombreInfo = () => document.getElementById('nombreInfo');
+    const jefaturaInfo = () => document.getElementById('jefaturaInfo');
+    const tipoVehiculoInfo = () => document.getElementById('tipoVehiculoInfo');
+    const estadoInfo = () => document.getElementById('estadoInfo');
+    const plantaInfo = () => document.getElementById('plantaInfo');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      patenteInput().addEventListener('input', onPatenteInput);
+      patenteInput().addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          buscarPatente();
+        }
+      });
+
+      clearLookupFields();
+    });
+
+    function onPatenteInput() {
+      const normalized = normalizarPatenteInput(patenteInput().value);
+      patenteInput().value = normalized;
+
+      if (lastSearchedPatente && normalized !== lastSearchedPatente) {
+        currentLookup = null;
+        clearLookupFields();
+        const box = document.getElementById('resultado');
+        box.style.display = 'none';
+      }
+    }
 
     function seleccionarTipo(tipo) {
       tipoMovimiento = tipo;
@@ -428,6 +499,58 @@
       if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('PEGAR_AQUI_URL_EXEC')) {
         throw new Error('Debes pegar tu URL /exec real de Apps Script en APPS_SCRIPT_URL.');
       }
+    }
+
+    function normalizarPatenteInput(v) {
+      return String(v || '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .trim();
+    }
+
+    function clearLookupFields() {
+      nombreInfo().value = '';
+      jefaturaInfo().value = '';
+      tipoVehiculoInfo().value = '';
+      estadoInfo().value = '';
+      plantaInfo().value = '';
+    }
+
+    function fillLookupFields(data) {
+      if (!data) {
+        clearLookupFields();
+        return;
+      }
+
+      if (data.encontrado) {
+        nombreInfo().value = data.nombre || '';
+        jefaturaInfo().value = data.jefatura || '';
+        tipoVehiculoInfo().value = data.tipoVehiculo || '';
+        estadoInfo().value = 'ENCONTRADO';
+        plantaInfo().value = data.planta || '';
+      } else {
+        nombreInfo().value = '';
+        jefaturaInfo().value = '';
+        tipoVehiculoInfo().value = '';
+        estadoInfo().value = 'SIN REGISTRO';
+        plantaInfo().value = '';
+      }
+    }
+
+    function limpiarFormularioDespuesDeRegistro() {
+      patenteInput().value = '';
+      document.getElementById('acompanante').value = '';
+      document.getElementById('observacion').value = '';
+      clearLookupFields();
+      currentLookup = null;
+      lastSearchedPatente = '';
+      imagenCapturadaBase64 = '';
+      setOcrTexto('Aún no se ha ejecutado OCR.');
+
+      const fotoBox = document.getElementById('fotoBox');
+      const fotoPreview = document.getElementById('fotoPreview');
+      fotoPreview.src = '';
+      fotoBox.style.display = 'none';
     }
 
     function jsonpRequest(action, params = {}) {
@@ -480,6 +603,29 @@
           reject(error);
         }
       });
+    }
+
+    async function consultarPatenteBackend(patente, showStatus = true) {
+      const patenteNorm = normalizarPatenteInput(patente);
+      if (!patenteNorm) {
+        throw new Error('Debes ingresar una patente.');
+      }
+
+      if (showStatus) {
+        mostrarEstado('Buscando patente...', 'info');
+      }
+
+      const data = await jsonpRequest('buscar', { patente: patenteNorm });
+
+      if (!data.ok) {
+        throw new Error(data.error || 'Error desconocido al buscar.');
+      }
+
+      lastSearchedPatente = patenteNorm;
+      currentLookup = data;
+      fillLookupFields(data);
+
+      return data;
     }
 
     async function abrirCamara() {
@@ -752,10 +898,8 @@
 
       for (let i = 0; i < data.length; i += 4) {
         let gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-
         gray = ((gray / 255 - 0.5) * contrast + 0.5) * 255;
         gray = gray * brightness;
-
         gray = Math.max(0, Math.min(255, gray));
 
         if (threshold !== null) {
@@ -866,10 +1010,7 @@
         for (let i = 0; i < candidates.length; i++) {
           const candidate = candidates[i];
 
-          mostrarEstado(
-            `OCR ${i + 1}/${candidates.length}: ${candidate.name}...`,
-            'info'
-          );
+          mostrarEstado(`OCR ${i + 1}/${candidates.length}: ${candidate.name}...`, 'info');
 
           const result = await worker.recognize(candidate.canvas);
           const rawText = result?.data?.text || '';
@@ -900,7 +1041,7 @@
         }
 
         if (bestOverall) {
-          document.getElementById('patente').value = bestOverall.plate;
+          patenteInput().value = normalizarPatenteInput(bestOverall.plate);
 
           setOcrTexto(
             `MEJOR RESULTADO\n` +
@@ -914,11 +1055,7 @@
             lines.join('\n')
           );
 
-          mostrarEstado(
-            `OCR completado. Patente detectada: ${bestOverall.plate}. Buscando en la base...`,
-            'ok'
-          );
-
+          mostrarEstado(`OCR completado. Patente detectada: ${bestOverall.plate}. Buscando en la base...`, 'ok');
           await buscarPatente();
 
         } else {
@@ -954,7 +1091,6 @@
           }
 
           const imageBase64 = dataUrlToBase64(imagenCapturadaBase64);
-
           if (!imageBase64) {
             resolve('');
             return;
@@ -1036,22 +1172,10 @@
       limpiarEstado();
 
       try {
-        const patente = document.getElementById('patente').value.trim();
+        const patente = normalizarPatenteInput(patenteInput().value);
+        patenteInput().value = patente;
 
-        if (!patente) {
-          mostrarEstado('Debes ingresar una patente.', 'error');
-          return;
-        }
-
-        mostrarEstado('Buscando patente...', 'info');
-
-        const data = await jsonpRequest('buscar', {
-          patente: patente
-        });
-
-        if (!data.ok) {
-          throw new Error(data.error || 'Error desconocido al buscar.');
-        }
+        const data = await consultarPatenteBackend(patente, true);
 
         const box = document.getElementById('resultado');
         box.style.display = 'block';
@@ -1067,7 +1191,7 @@
             <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
             <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
           `;
-          mostrarEstado('Patente encontrada correctamente.', 'ok');
+          mostrarEstado('Patente encontrada. Ahora presiona "Registrar movimiento" para dejar trazabilidad.', 'ok');
         } else {
           box.className = 'resultado no-encontrado';
           box.innerHTML = `
@@ -1076,7 +1200,7 @@
             <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
             <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO</div>
           `;
-          mostrarEstado('La patente no tiene registro en la base.', 'error');
+          mostrarEstado('La patente no tiene registro en la base. Si corresponde, igual puedes registrarla.', 'error');
         }
 
       } catch (error) {
@@ -1088,11 +1212,13 @@
       limpiarEstado();
 
       try {
-        const patente = document.getElementById('patente').value.trim();
+        const patente = normalizarPatenteInput(patenteInput().value);
         const guardia = document.getElementById('guardia').value.trim();
         const acceso = document.getElementById('acceso').value.trim();
         const acompanante = document.getElementById('acompanante').value.trim();
         const observacion = document.getElementById('observacion').value.trim();
+
+        patenteInput().value = patente;
 
         if (!patente) {
           mostrarEstado('Debes ingresar una patente.', 'error');
@@ -1107,6 +1233,18 @@
         if (!acceso) {
           mostrarEstado('Debes ingresar el acceso.', 'error');
           return;
+        }
+
+        let lookup = currentLookup;
+
+        if (!lookup || lastSearchedPatente !== patente) {
+          lookup = await consultarPatenteBackend(patente, false);
+        }
+
+        if (lookup?.encontrado) {
+          mostrarEstado('Patente validada en base. Registrando movimiento...', 'info');
+        } else {
+          mostrarEstado('Patente sin registro en base. Registrando movimiento igualmente...', 'info');
         }
 
         let evidenciaUrl = '';
@@ -1154,7 +1292,8 @@
           }</div>
         `;
 
-        mostrarEstado('Movimiento registrado correctamente con evidencia.', 'ok');
+        mostrarEstado('Movimiento registrado correctamente.', 'ok');
+        limpiarFormularioDespuesDeRegistro();
 
       } catch (error) {
         mostrarEstado('Error al registrar: ' + error.message, 'error');
