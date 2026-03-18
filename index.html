@@ -296,7 +296,7 @@
       border: 1px solid #d1d5db;
       border-radius: 12px;
       padding: 10px;
-      min-height: 70px;
+      min-height: 90px;
     }
 
     @media (max-width: 700px) {
@@ -314,7 +314,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Registro de Patentes KRUGGER</h1>
-      <div class="sub">Frontend en GitHub Pages + backend en Apps Script + evidencia en Drive + OCR local.</div>
+      <div class="sub">Frontend en GitHub Pages + backend en Apps Script + evidencia en Drive + OCR local mejorado.</div>
 
       <div class="tipo-box">
         <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
@@ -364,7 +364,7 @@
         <div class="acciones-4">
           <button class="btn btn-camara" onclick="abrirCamara()">Abrir cámara</button>
           <button class="btn btn-captura" onclick="capturarFoto()">Capturar foto</button>
-          <button class="btn btn-ocr" onclick="leerPatenteOCR()">Leer patente (OCR)</button>
+          <button class="btn btn-ocr" onclick="leerPatenteOCR(false)">Reintentar OCR</button>
           <button class="btn btn-detener" onclick="detenerCamara()">Detener cámara</button>
         </div>
 
@@ -386,7 +386,7 @@
         </div>
 
         <div class="nota">
-          Esta etapa prueba OCR local sobre la foto capturada. La primera lectura puede tardar más que las siguientes.
+          Al capturar la foto, el sistema intentará leer la patente automáticamente. La primera lectura puede tardar más que las siguientes.
         </div>
       </div>
     </div>
@@ -400,6 +400,7 @@
     let imagenCapturadaBase64 = '';
     let ocrWorker = null;
     let ocrInicializado = false;
+    let ocrEnProceso = false;
 
     function seleccionarTipo(tipo) {
       tipoMovimiento = tipo;
@@ -419,14 +420,14 @@
       box.textContent = '';
     }
 
+    function setOcrTexto(texto) {
+      document.getElementById('ocrTexto').textContent = texto || '';
+    }
+
     function validarBackend() {
       if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('PEGAR_AQUI_URL_EXEC')) {
         throw new Error('Debes pegar tu URL /exec real de Apps Script en APPS_SCRIPT_URL.');
       }
-    }
-
-    function setOcrTexto(texto) {
-      document.getElementById('ocrTexto').textContent = texto || '';
     }
 
     function jsonpRequest(action, params = {}) {
@@ -530,7 +531,7 @@
       }
     }
 
-    function capturarFoto() {
+    async function capturarFoto() {
       limpiarEstado();
 
       const video = document.getElementById('video');
@@ -557,13 +558,15 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, width, height);
 
-      imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.80);
+      imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.82);
 
       fotoPreview.src = imagenCapturadaBase64;
       fotoBox.style.display = 'block';
 
-      setOcrTexto('Foto capturada. Lista para OCR.');
-      mostrarEstado('Foto capturada correctamente.', 'ok');
+      setOcrTexto('Foto capturada. Iniciando OCR automático...');
+      mostrarEstado('Foto capturada correctamente. Iniciando OCR...', 'info');
+
+      await leerPatenteOCR(true);
     }
 
     function dataUrlToBase64(dataUrl) {
@@ -580,28 +583,230 @@
     function normalizarTextoOCR(texto) {
       return String(texto || '')
         .toUpperCase()
-        .replace(/[^A-Z0-9\s]/g, ' ')
+        .replace(/[^A-Z0-9\s-]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
     }
 
-    function extraerPatenteProbable(texto) {
-      const limpio = normalizarTextoOCR(texto).replace(/\s/g, '');
+    function mapDigitToLetter(ch) {
+      const m = {
+        '0': 'O',
+        '1': 'I',
+        '2': 'Z',
+        '4': 'A',
+        '5': 'S',
+        '6': 'G',
+        '8': 'B'
+      };
+      return m[ch] || ch;
+    }
 
-      const patrones = [
-        /[A-Z]{4}[0-9]{2}/g,
-        /[A-Z]{2}[A-Z0-9]{2}[0-9]{2}/g,
-        /[A-Z]{3}[A-Z0-9][0-9]{2}/g
-      ];
+    function mapLetterToDigit(ch) {
+      const m = {
+        'O': '0',
+        'Q': '0',
+        'D': '0',
+        'U': '0',
+        'I': '1',
+        'L': '1',
+        'Z': '2',
+        'S': '5',
+        'G': '6',
+        'B': '8'
+      };
+      return m[ch] || ch;
+    }
 
-      for (const regex of patrones) {
-        const match = limpio.match(regex);
-        if (match && match.length) {
-          return match[0];
+    function regexFromMask(mask) {
+      return new RegExp('^' + mask.replace(/L/g, '[A-Z]').replace(/N/g, '[0-9]') + '$');
+    }
+
+    function normalizeWithMask(token, mask) {
+      if (!token || token.length !== mask.length) return null;
+
+      let out = '';
+      let changes = 0;
+
+      for (let i = 0; i < mask.length; i++) {
+        const expected = mask[i];
+        const ch = token[i];
+
+        if (expected === 'L') {
+          if (/[A-Z]/.test(ch)) {
+            out += ch;
+          } else if (/[0-9]/.test(ch)) {
+            const mapped = mapDigitToLetter(ch);
+            if (!/[A-Z]/.test(mapped)) return null;
+            out += mapped;
+            if (mapped !== ch) changes++;
+          } else {
+            return null;
+          }
+        }
+
+        if (expected === 'N') {
+          if (/[0-9]/.test(ch)) {
+            out += ch;
+          } else if (/[A-Z]/.test(ch)) {
+            const mapped = mapLetterToDigit(ch);
+            if (!/[0-9]/.test(mapped)) return null;
+            out += mapped;
+            if (mapped !== ch) changes++;
+          } else {
+            return null;
+          }
         }
       }
 
-      return '';
+      if (!regexFromMask(mask).test(out)) return null;
+
+      return { text: out, changes: changes };
+    }
+
+    function buildTokenPool(rawText) {
+      const clean = String(rawText || '').toUpperCase().replace(/[^A-Z0-9]/g, ' ');
+      const parts = clean.split(/\s+/).filter(Boolean);
+      const tokens = new Set();
+
+      for (const p of parts) {
+        if (p.length >= 4 && p.length <= 8) {
+          tokens.add(p);
+        }
+      }
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        const joined = parts[i] + parts[i + 1];
+        if (joined.length >= 5 && joined.length <= 8) {
+          tokens.add(joined);
+        }
+      }
+
+      const noSpace = parts.join('');
+      for (const len of [5, 6]) {
+        if (noSpace.length >= len) {
+          for (let i = 0; i <= noSpace.length - len; i++) {
+            tokens.add(noSpace.slice(i, i + len));
+          }
+        }
+      }
+
+      return Array.from(tokens);
+    }
+
+    function elegirMejorPatenteDesdeTexto(rawText, confidence = 0) {
+      const patterns = [
+        { mask: 'LLLLNN', base: 100 },
+        { mask: 'LLNNN', base: 88 },
+        { mask: 'LLNNNN', base: 82 }
+      ];
+
+      const tokens = buildTokenPool(rawText);
+      let best = null;
+
+      for (const token of tokens) {
+        for (const pattern of patterns) {
+          if (token.length !== pattern.mask.length) continue;
+
+          const normalized = normalizeWithMask(token, pattern.mask);
+          if (!normalized) continue;
+
+          const score = pattern.base + Math.min(confidence, 100) * 0.25 - normalized.changes * 4;
+
+          const item = {
+            plate: normalized.text,
+            source: token,
+            mask: pattern.mask,
+            changes: normalized.changes,
+            score: score
+          };
+
+          if (!best || item.score > best.score) {
+            best = item;
+          }
+        }
+      }
+
+      return best;
+    }
+
+    function createProcessedCanvasFromRegion(srcCanvas, crop, options = {}) {
+      const sx = Math.max(0, Math.floor(srcCanvas.width * crop.x));
+      const sy = Math.max(0, Math.floor(srcCanvas.height * crop.y));
+      const sw = Math.max(1, Math.floor(srcCanvas.width * crop.w));
+      const sh = Math.max(1, Math.floor(srcCanvas.height * crop.h));
+
+      const scale = options.scale || 2;
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = Math.max(1, Math.floor(sw * scale));
+      outCanvas.height = Math.max(1, Math.floor(sh * scale));
+
+      const ctx = outCanvas.getContext('2d');
+      ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, outCanvas.width, outCanvas.height);
+
+      const imageData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
+      const data = imageData.data;
+
+      const contrast = options.contrast || 1.8;
+      const brightness = options.brightness || 1.05;
+      const threshold = options.threshold ?? null;
+
+      for (let i = 0; i < data.length; i += 4) {
+        let gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
+
+        gray = ((gray / 255 - 0.5) * contrast + 0.5) * 255;
+        gray = gray * brightness;
+
+        gray = Math.max(0, Math.min(255, gray));
+
+        if (threshold !== null) {
+          gray = gray >= threshold ? 255 : 0;
+        }
+
+        data[i] = gray;
+        data[i + 1] = gray;
+        data[i + 2] = gray;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      return outCanvas;
+    }
+
+    function construirCandidatosOCR() {
+      const srcCanvas = document.getElementById('canvas');
+
+      if (!srcCanvas.width || !srcCanvas.height) {
+        return [];
+      }
+
+      return [
+        {
+          name: 'superior_binaria',
+          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.02, w: 0.84, h: 0.34 }, {
+            scale: 2.4,
+            contrast: 2.1,
+            brightness: 1.08,
+            threshold: 150
+          })
+        },
+        {
+          name: 'media_binaria',
+          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.18, w: 0.84, h: 0.30 }, {
+            scale: 2.2,
+            contrast: 2.0,
+            brightness: 1.06,
+            threshold: 148
+          })
+        },
+        {
+          name: 'media_grises',
+          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.18, w: 0.84, h: 0.30 }, {
+            scale: 2.1,
+            contrast: 1.9,
+            brightness: 1.08,
+            threshold: null
+          })
+        }
+      ];
     }
 
     async function asegurarWorkerOCR() {
@@ -609,9 +814,13 @@
         return ocrWorker;
       }
 
-      mostrarEstado('Inicializando OCR por primera vez... puede tardar un poco.', 'info');
+      mostrarEstado('Inicializando OCR por primera vez... esto puede tardar un poco.', 'info');
 
-      ocrWorker = await Tesseract.createWorker('eng', 1, {
+      const oemMode = (window.Tesseract && Tesseract.OEM && Tesseract.OEM.DEFAULT != null)
+        ? Tesseract.OEM.DEFAULT
+        : 1;
+
+      ocrWorker = await Tesseract.createWorker('eng', oemMode, {
         logger: m => {
           if (m && m.status) {
             const pct = m.progress ? ' ' + Math.round(m.progress * 100) + '%' : '';
@@ -620,11 +829,20 @@
         }
       });
 
+      await ocrWorker.setParameters({
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        tessedit_pageseg_mode: 7,
+        preserve_interword_spaces: '0',
+        user_defined_dpi: '300'
+      });
+
       ocrInicializado = true;
       return ocrWorker;
     }
 
-    async function leerPatenteOCR() {
+    async function leerPatenteOCR(auto = false) {
+      if (ocrEnProceso) return;
+
       limpiarEstado();
 
       try {
@@ -633,33 +851,95 @@
           return;
         }
 
-        setOcrTexto('Procesando imagen...');
+        ocrEnProceso = true;
+        setOcrTexto('Preparando OCR...');
         const worker = await asegurarWorkerOCR();
+        const candidates = construirCandidatosOCR();
 
-        const {
-          data: { text }
-        } = await worker.recognize(imagenCapturadaBase64);
+        if (!candidates.length) {
+          throw new Error('No se pudo preparar la imagen para OCR.');
+        }
 
-        const textoBruto = text || '';
-        const textoLimpio = normalizarTextoOCR(textoBruto);
-        const patenteProbable = extraerPatenteProbable(textoBruto);
+        let bestOverall = null;
+        const lines = [];
 
-        setOcrTexto(
-          'TEXTO BRUTO:\n' + textoBruto + '\n\n' +
-          'TEXTO LIMPIO:\n' + textoLimpio + '\n\n' +
-          'PATENTE PROBABLE:\n' + (patenteProbable || 'No encontrada')
-        );
+        for (let i = 0; i < candidates.length; i++) {
+          const candidate = candidates[i];
 
-        if (patenteProbable) {
-          document.getElementById('patente').value = patenteProbable;
-          mostrarEstado('OCR completado. Patente probable detectada: ' + patenteProbable, 'ok');
+          mostrarEstado(
+            `OCR ${i + 1}/${candidates.length}: ${candidate.name}...`,
+            'info'
+          );
+
+          const result = await worker.recognize(candidate.canvas);
+          const rawText = result?.data?.text || '';
+          const confidence = Number(result?.data?.confidence || 0);
+
+          const bestPlate = elegirMejorPatenteDesdeTexto(rawText, confidence);
+
+          lines.push(
+            `[${candidate.name}]`,
+            `Confianza OCR: ${confidence.toFixed(2)}`,
+            `Texto bruto: ${rawText.trim() || '(vacío)'}`,
+            `Patente probable: ${bestPlate ? bestPlate.plate : 'No encontrada'}`,
+            ``
+          );
+
+          if (bestPlate && (!bestOverall || bestPlate.score > bestOverall.score)) {
+            bestOverall = {
+              ...bestPlate,
+              confidence,
+              attempt: candidate.name,
+              rawText: rawText
+            };
+          }
+
+          if (bestOverall && bestOverall.score >= 112) {
+            break;
+          }
+        }
+
+        if (bestOverall) {
+          document.getElementById('patente').value = bestOverall.plate;
+
+          setOcrTexto(
+            `MEJOR RESULTADO\n` +
+            `Patente: ${bestOverall.plate}\n` +
+            `Origen: ${bestOverall.source}\n` +
+            `Formato: ${bestOverall.mask}\n` +
+            `Intento: ${bestOverall.attempt}\n` +
+            `Confianza OCR: ${bestOverall.confidence.toFixed(2)}\n` +
+            `Cambios por corrección: ${bestOverall.changes}\n\n` +
+            `DETALLE DE INTENTOS\n` +
+            lines.join('\n')
+          );
+
+          mostrarEstado(
+            `OCR completado. Patente detectada: ${bestOverall.plate}. Buscando en la base...`,
+            'ok'
+          );
+
+          await buscarPatente();
+
         } else {
-          mostrarEstado('OCR completado, pero no se detectó una patente clara. Revisa el texto OCR.', 'error');
+          setOcrTexto(
+            `NO SE DETECTÓ UNA PATENTE CLARA.\n\nDETALLE DE INTENTOS\n` +
+            lines.join('\n')
+          );
+
+          mostrarEstado(
+            auto
+              ? 'OCR automático completado, pero no se detectó una patente clara.'
+              : 'OCR completado, pero no se detectó una patente clara.',
+            'error'
+          );
         }
 
       } catch (error) {
         setOcrTexto('Error OCR: ' + error.message);
         mostrarEstado('Error al ejecutar OCR: ' + error.message, 'error');
+      } finally {
+        ocrEnProceso = false;
       }
     }
 
