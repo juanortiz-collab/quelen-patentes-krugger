@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quelen Patentes Krugger</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.08);
+      margin-top: 18px;
+    }
+
+    h1 {
+      margin: 0 0 6px 0;
+      font-size: 28px;
+    }
+
+    .sub {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
+    .tipo-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .tipo-btn {
+      flex: 1;
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .tipo-btn.activo {
+      background: #0f172a;
+      color: white;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .row-1 {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      font-size: 16px;
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    .acciones-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .btn-camara {
+      background: #7c3aed;
+      color: white;
+    }
+
+    .btn-captura {
+      background: #ea580c;
+      color: white;
+    }
+
+    .btn-detener {
+      background: #6b7280;
+      color: white;
+    }
+
+    .estado {
+      margin-top: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      display: none;
+    }
+
+    .estado.info {
+      display: block;
+      background: #dbeafe;
+      color: #1e3a8a;
+    }
+
+    .estado.ok {
+      display: block;
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .estado.error {
+      display: block;
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .camara-box {
+      margin-top: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      padding: 16px;
+      background: #fafafa;
+    }
+
+    .camara-box h2 {
+      margin: 0 0 12px 0;
+      font-size: 22px;
+    }
+
+    .video-wrap {
+      width: 100%;
+      background: #0f172a;
+      border-radius: 16px;
+      overflow: hidden;
+      min-height: 280px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 14px;
+    }
+
+    video {
+      width: 100%;
+      max-height: 460px;
+      display: block;
+      background: #0f172a;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    .foto-box {
+      margin-top: 16px;
+      display: none;
+    }
+
+    .foto-box img {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid #d1d5db;
+      display: block;
+    }
+
+    .foto-label {
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .nota {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .resultado-local {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 14px;
+      background: #f9fafb;
+      border-left: 6px solid #2563eb;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 700px) {
+      .row, .acciones-3 {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Registro de Patentes KRUGGER</h1>
+      <div class="sub">Prueba inicial en GitHub Pages para validar cámara y captura local.</div>
+
+      <div class="tipo-box">
+        <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
+        <button id="btnSalida" class="tipo-btn" onclick="seleccionarTipo('SALIDA')">SALIDA</button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="patente">Patente</label>
+          <input id="patente" type="text" placeholder="Ejemplo: CRKF23" />
+        </div>
+        <div>
+          <label for="guardia">Guardia</label>
+          <input id="guardia" type="text" placeholder="Nombre del guardia" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="acceso">Acceso</label>
+          <input id="acceso" type="text" value="Portería 2" />
+        </div>
+        <div>
+          <label for="acompanante">Acompañante</label>
+          <input id="acompanante" type="text" placeholder="Opcional" />
+        </div>
+      </div>
+
+      <div class="row-1">
+        <div>
+          <label for="observacion">Observación</label>
+          <textarea id="observacion" placeholder="Opcional"></textarea>
+        </div>
+      </div>
+
+      <div id="estado" class="estado"></div>
+
+      <div class="camara-box">
+        <h2>Cámara</h2>
+
+        <div class="acciones-3">
+          <button class="btn btn-camara" onclick="abrirCamara()">Abrir cámara</button>
+          <button class="btn btn-captura" onclick="capturarFoto()">Capturar foto</button>
+          <button class="btn btn-detener" onclick="detenerCamara()">Detener cámara</button>
+        </div>
+
+        <div class="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+        </div>
+
+        <canvas id="canvas"></canvas>
+
+        <div id="fotoBox" class="foto-box">
+          <div class="foto-label">Foto capturada</div>
+          <img id="fotoPreview" alt="Foto capturada" />
+        </div>
+
+        <div class="resultado-local">
+          En esta etapa solo validamos 3 cosas:
+          <br>1. que GitHub Pages abra la cámara,
+          <br>2. que puedas capturar una foto,
+          <br>3. que la imagen quede visible abajo.
+        </div>
+
+        <div class="nota">
+          Después conectamos esta pantalla al backend de Google Sheets y luego al lector de patente.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let tipoMovimiento = 'ENTRADA';
+    let currentStream = null;
+    let imagenCapturadaBase64 = '';
+
+    function seleccionarTipo(tipo) {
+      tipoMovimiento = tipo;
+      document.getElementById('btnEntrada').classList.toggle('activo', tipo === 'ENTRADA');
+      document.getElementById('btnSalida').classList.toggle('activo', tipo === 'SALIDA');
+    }
+
+    function mostrarEstado(texto, tipo) {
+      const box = document.getElementById('estado');
+      box.className = 'estado ' + tipo;
+      box.textContent = texto;
+    }
+
+    function limpiarEstado() {
+      const box = document.getElementById('estado');
+      box.className = 'estado';
+      box.textContent = '';
+    }
+
+    async function abrirCamara() {
+      limpiarEstado();
+
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          mostrarEstado('Este navegador no soporta acceso a cámara.', 'error');
+          return;
+        }
+
+        if (currentStream) {
+          detenerCamara(false);
+        }
+
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+
+        const video = document.getElementById('video');
+        video.srcObject = stream;
+
+        mostrarEstado('Cámara abierta correctamente.', 'ok');
+      } catch (error) {
+        mostrarEstado('No se pudo abrir la cámara: ' + error.message, 'error');
+      }
+    }
+
+    function detenerCamara(mostrarMensaje = true) {
+      const video = document.getElementById('video');
+
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+
+      video.srcObject = null;
+
+      if (mostrarMensaje) {
+        mostrarEstado('Cámara detenida.', 'info');
+      }
+    }
+
+    function capturarFoto() {
+      limpiarEstado();
+
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const fotoPreview = document.getElementById('fotoPreview');
+      const fotoBox = document.getElementById('fotoBox');
+
+      if (!video.srcObject) {
+        mostrarEstado('Primero debes abrir la cámara.', 'error');
+        return;
+      }
+
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+
+      if (!width || !height) {
+        mostrarEstado('La cámara aún no está lista. Espera un segundo e inténtalo de nuevo.', 'error');
+        return;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, width, height);
+
+      imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.92);
+
+      fotoPreview.src = imagenCapturadaBase64;
+      fotoBox.style.display = 'block';
+
+      mostrarEstado('Foto capturada correctamente.', 'ok');
+    }
+  </script>
+</body>
+</html>
