@@ -1,0 +1,1 @@
+# quelen-patentes-krugger
