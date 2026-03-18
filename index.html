@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quelen Patentes Krugger</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
   <style>
     * { box-sizing: border-box; }
 
@@ -62,7 +60,7 @@
 
     .tipo-btn.activo {
       background: #0f172a;
-      color: white;
+      color: #ffffff;
     }
 
     .row {
@@ -99,12 +97,12 @@
       border: 1px solid #d1d5db;
       border-radius: 12px;
       font-size: 16px;
-      background: #fff;
+      background: #ffffff;
+      color: #111827;
     }
 
     input[readonly] {
       background: #f9fafb;
-      color: #111827;
     }
 
     textarea {
@@ -137,32 +135,32 @@
 
     .btn-buscar {
       background: #2563eb;
-      color: white;
+      color: #ffffff;
     }
 
     .btn-registrar {
       background: #059669;
-      color: white;
+      color: #ffffff;
     }
 
     .btn-camara {
       background: #7c3aed;
-      color: white;
+      color: #ffffff;
     }
 
     .btn-captura {
       background: #ea580c;
-      color: white;
+      color: #ffffff;
+    }
+
+    .btn-ia {
+      background: #0ea5e9;
+      color: #ffffff;
     }
 
     .btn-detener {
       background: #6b7280;
-      color: white;
-    }
-
-    .btn-ocr {
-      background: #0ea5e9;
-      color: white;
+      color: #ffffff;
     }
 
     .estado {
@@ -304,7 +302,7 @@
       font-size: 14px;
       white-space: pre-wrap;
       word-break: break-word;
-      background: white;
+      background: #ffffff;
       border: 1px solid #d1d5db;
       border-radius: 12px;
       padding: 10px;
@@ -326,7 +324,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Registro de Patentes KRUGGER</h1>
-      <div class="sub">Buscar patente rellena la ficha. Registrar movimiento deja la trazabilidad oficial en la planilla.</div>
+      <div class="sub">Manual o por lectura IA. La búsqueda rellena la ficha y el registro deja trazabilidad oficial.</div>
 
       <div class="tipo-box">
         <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
@@ -397,12 +395,12 @@
       <div id="resultado" class="resultado"></div>
 
       <div class="camara-box">
-        <h2>Cámara</h2>
+        <h2>Lector de patente</h2>
 
         <div class="acciones-4">
           <button class="btn btn-camara" onclick="abrirCamara()">Abrir cámara</button>
           <button class="btn btn-captura" onclick="capturarFoto()">Capturar foto</button>
-          <button class="btn btn-ocr" onclick="leerPatenteOCR(false)">Reintentar OCR</button>
+          <button class="btn btn-ia" onclick="leerPatenteIA(false)">Leer patente IA</button>
           <button class="btn btn-detener" onclick="detenerCamara()">Detener cámara</button>
         </div>
 
@@ -411,7 +409,6 @@
         </div>
 
         <canvas id="canvas"></canvas>
-        <iframe id="uploadFrame" name="uploadFrame" style="display:none;"></iframe>
 
         <div id="fotoBox" class="foto-box">
           <div class="foto-label">Foto capturada</div>
@@ -419,26 +416,24 @@
         </div>
 
         <div class="ocr-box">
-          <h3>Resultado OCR</h3>
-          <div id="ocrTexto" class="ocr-texto">Aún no se ha ejecutado OCR.</div>
+          <h3>Resultado lector IA</h3>
+          <div id="ocrTexto" class="ocr-texto">Aún no se ha ejecutado la lectura IA.</div>
         </div>
 
         <div class="nota">
-          Al capturar la foto, el sistema intenta leer la patente automáticamente. Si encuentra datos, rellena la ficha. Recién al apretar “Registrar movimiento” queda grabado en la planilla.
+          Al capturar la foto, el sistema intentará leer la patente con Plate Recognizer vía Apps Script. Después puedes registrar el movimiento.
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxVgRg5rpnfXKqHBd_wzbN7F084XeB3-Yrr9ixjuYqUIb6MT8nlu46NqQA8o7EO1XY/exec';
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCVXa1y04mihcnhJZh4Iv0jjsHY3LJGKZ9plveDp9_hWfnAFpSUgntCgSwUy57F_8X/exec';
 
     let tipoMovimiento = 'ENTRADA';
     let currentStream = null;
     let imagenCapturadaBase64 = '';
-    let ocrWorker = null;
-    let ocrInicializado = false;
-    let ocrEnProceso = false;
+    let lecturaIAEnProceso = false;
     let currentLookup = null;
     let lastSearchedPatente = '';
 
@@ -491,7 +486,7 @@
       box.textContent = '';
     }
 
-    function setOcrTexto(texto) {
+    function setIATexto(texto) {
       document.getElementById('ocrTexto').textContent = texto || '';
     }
 
@@ -506,9 +501,6 @@
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '')
         .trim();
-    }
-
-    .trim();
     }
 
     function clearLookupFields() {
@@ -529,7 +521,7 @@
         nombreInfo().value = data.nombre || '';
         jefaturaInfo().value = data.jefatura || '';
         tipoVehiculoInfo().value = data.tipoVehiculo || '';
-        estadoInfo().value = 'ENCONTRADO';
+        estadoInfo().value = data.estado || 'ENCONTRADO';
         plantaInfo().value = data.planta || '';
       } else {
         nombreInfo().value = '';
@@ -548,7 +540,7 @@
       currentLookup = null;
       lastSearchedPatente = '';
       imagenCapturadaBase64 = '';
-      setOcrTexto('Aún no se ha ejecutado OCR.');
+      setIATexto('Aún no se ha ejecutado la lectura IA.');
 
       const fotoBox = document.getElementById('fotoBox');
       const fotoPreview = document.getElementById('fotoPreview');
@@ -601,6 +593,81 @@
 
           script.src = url.toString();
           document.body.appendChild(script);
+
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+
+    function postToAppsScriptIframe(action, fields, expectedSource, timeoutMs = 30000) {
+      return new Promise((resolve, reject) => {
+        try {
+          validarBackend();
+
+          const iframeName = 'hiddenFrame_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+          const iframe = document.createElement('iframe');
+          iframe.name = iframeName;
+          iframe.style.display = 'none';
+
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = APPS_SCRIPT_URL;
+          form.target = iframeName;
+          form.style.display = 'none';
+
+          const allFields = Object.assign({ action }, fields || {});
+
+          Object.entries(allFields).forEach(([key, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value == null ? '' : String(value);
+            form.appendChild(input);
+          });
+
+          let timeoutId = null;
+
+          function cleanup() {
+            if (timeoutId) clearTimeout(timeoutId);
+            window.removeEventListener('message', onMessage);
+            if (form.parentNode) form.parentNode.removeChild(form);
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          }
+
+          function onMessage(event) {
+            let payload = event.data;
+
+            if (typeof payload === 'string') {
+              try {
+                payload = JSON.parse(payload);
+              } catch (e) {
+                return;
+              }
+            }
+
+            if (!payload || payload.source !== expectedSource) {
+              return;
+            }
+
+            cleanup();
+
+            if (payload.ok) {
+              resolve(payload);
+            } else {
+              reject(new Error(payload.error || 'Error de backend.'));
+            }
+          }
+
+          timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error('La operación tardó demasiado.'));
+          }, timeoutMs);
+
+          window.addEventListener('message', onMessage);
+          document.body.appendChild(iframe);
+          document.body.appendChild(form);
+          form.submit();
 
         } catch (error) {
           reject(error);
@@ -701,21 +768,26 @@
         return;
       }
 
-      canvas.width = width;
-      canvas.height = height;
+      const maxWidth = 1280;
+      const scale = width > maxWidth ? (maxWidth / width) : 1;
+      const outWidth = Math.round(width * scale);
+      const outHeight = Math.round(height * scale);
+
+      canvas.width = outWidth;
+      canvas.height = outHeight;
 
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, width, height);
+      ctx.drawImage(video, 0, 0, outWidth, outHeight);
 
       imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.82);
 
       fotoPreview.src = imagenCapturadaBase64;
       fotoBox.style.display = 'block';
 
-      setOcrTexto('Foto capturada. Iniciando OCR automático...');
-      mostrarEstado('Foto capturada correctamente. Iniciando OCR...', 'info');
+      setIATexto('Foto capturada. Iniciando lectura IA...');
+      mostrarEstado('Foto capturada correctamente. Iniciando lectura IA...', 'info');
 
-      await leerPatenteOCR(true);
+      await leerPatenteIA(true);
     }
 
     function dataUrlToBase64(dataUrl) {
@@ -729,266 +801,10 @@
         .replace(/[^A-Z0-9_-]/g, '_');
     }
 
-    function normalizarTextoOCR(texto) {
-      return String(texto || '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9\s-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    function mapDigitToLetter(ch) {
-      const m = {
-        '0': 'O',
-        '1': 'I',
-        '2': 'Z',
-        '4': 'A',
-        '5': 'S',
-        '6': 'G',
-        '8': 'B'
-      };
-      return m[ch] || ch;
-    }
-
-    function mapLetterToDigit(ch) {
-      const m = {
-        'O': '0',
-        'Q': '0',
-        'D': '0',
-        'U': '0',
-        'I': '1',
-        'L': '1',
-        'Z': '2',
-        'S': '5',
-        'G': '6',
-        'B': '8'
-      };
-      return m[ch] || ch;
-    }
-
-    function regexFromMask(mask) {
-      return new RegExp('^' + mask.replace(/L/g, '[A-Z]').replace(/N/g, '[0-9]') + '$');
-    }
-
-    function normalizeWithMask(token, mask) {
-      if (!token || token.length !== mask.length) return null;
-
-      let out = '';
-      let changes = 0;
-
-      for (let i = 0; i < mask.length; i++) {
-        const expected = mask[i];
-        const ch = token[i];
-
-        if (expected === 'L') {
-          if (/[A-Z]/.test(ch)) {
-            out += ch;
-          } else if (/[0-9]/.test(ch)) {
-            const mapped = mapDigitToLetter(ch);
-            if (!/[A-Z]/.test(mapped)) return null;
-            out += mapped;
-            if (mapped !== ch) changes++;
-          } else {
-            return null;
-          }
-        }
-
-        if (expected === 'N') {
-          if (/[0-9]/.test(ch)) {
-            out += ch;
-          } else if (/[A-Z]/.test(ch)) {
-            const mapped = mapLetterToDigit(ch);
-            if (!/[0-9]/.test(mapped)) return null;
-            out += mapped;
-            if (mapped !== ch) changes++;
-          } else {
-            return null;
-          }
-        }
+    async function leerPatenteIA(auto = false) {
+      if (lecturaIAEnProceso) {
+        return;
       }
-
-      if (!regexFromMask(mask).test(out)) return null;
-
-      return { text: out, changes: changes };
-    }
-
-    function buildTokenPool(rawText) {
-      const clean = String(rawText || '').toUpperCase().replace(/[^A-Z0-9]/g, ' ');
-      const parts = clean.split(/\s+/).filter(Boolean);
-      const tokens = new Set();
-
-      for (const p of parts) {
-        if (p.length >= 4 && p.length <= 8) {
-          tokens.add(p);
-        }
-      }
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        const joined = parts[i] + parts[i + 1];
-        if (joined.length >= 5 && joined.length <= 8) {
-          tokens.add(joined);
-        }
-      }
-
-      const noSpace = parts.join('');
-      for (const len of [5, 6]) {
-        if (noSpace.length >= len) {
-          for (let i = 0; i <= noSpace.length - len; i++) {
-            tokens.add(noSpace.slice(i, i + len));
-          }
-        }
-      }
-
-      return Array.from(tokens);
-    }
-
-    function elegirMejorPatenteDesdeTexto(rawText, confidence = 0) {
-      const patterns = [
-        { mask: 'LLLLNN', base: 100 },
-        { mask: 'LLNNN', base: 88 },
-        { mask: 'LLNNNN', base: 82 }
-      ];
-
-      const tokens = buildTokenPool(rawText);
-      let best = null;
-
-      for (const token of tokens) {
-        for (const pattern of patterns) {
-          if (token.length !== pattern.mask.length) continue;
-
-          const normalized = normalizeWithMask(token, pattern.mask);
-          if (!normalized) continue;
-
-          const score = pattern.base + Math.min(confidence, 100) * 0.25 - normalized.changes * 4;
-
-          const item = {
-            plate: normalized.text,
-            source: token,
-            mask: pattern.mask,
-            changes: normalized.changes,
-            score: score
-          };
-
-          if (!best || item.score > best.score) {
-            best = item;
-          }
-        }
-      }
-
-      return best;
-    }
-
-    function createProcessedCanvasFromRegion(srcCanvas, crop, options = {}) {
-      const sx = Math.max(0, Math.floor(srcCanvas.width * crop.x));
-      const sy = Math.max(0, Math.floor(srcCanvas.height * crop.y));
-      const sw = Math.max(1, Math.floor(srcCanvas.width * crop.w));
-      const sh = Math.max(1, Math.floor(srcCanvas.height * crop.h));
-
-      const scale = options.scale || 2;
-      const outCanvas = document.createElement('canvas');
-      outCanvas.width = Math.max(1, Math.floor(sw * scale));
-      outCanvas.height = Math.max(1, Math.floor(sh * scale));
-
-      const ctx = outCanvas.getContext('2d');
-      ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, outCanvas.width, outCanvas.height);
-
-      const imageData = ctx.getImageData(0, 0, outCanvas.width, outCanvas.height);
-      const data = imageData.data;
-
-      const contrast = options.contrast || 1.8;
-      const brightness = options.brightness || 1.05;
-      const threshold = options.threshold ?? null;
-
-      for (let i = 0; i < data.length; i += 4) {
-        let gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-        gray = ((gray / 255 - 0.5) * contrast + 0.5) * 255;
-        gray = gray * brightness;
-        gray = Math.max(0, Math.min(255, gray));
-
-        if (threshold !== null) {
-          gray = gray >= threshold ? 255 : 0;
-        }
-
-        data[i] = gray;
-        data[i + 1] = gray;
-        data[i + 2] = gray;
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-      return outCanvas;
-    }
-
-    function construirCandidatosOCR() {
-      const srcCanvas = document.getElementById('canvas');
-
-      if (!srcCanvas.width || !srcCanvas.height) {
-        return [];
-      }
-
-      return [
-        {
-          name: 'superior_binaria',
-          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.02, w: 0.84, h: 0.34 }, {
-            scale: 2.4,
-            contrast: 2.1,
-            brightness: 1.08,
-            threshold: 150
-          })
-        },
-        {
-          name: 'media_binaria',
-          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.18, w: 0.84, h: 0.30 }, {
-            scale: 2.2,
-            contrast: 2.0,
-            brightness: 1.06,
-            threshold: 148
-          })
-        },
-        {
-          name: 'media_grises',
-          canvas: createProcessedCanvasFromRegion(srcCanvas, { x: 0.08, y: 0.18, w: 0.84, h: 0.30 }, {
-            scale: 2.1,
-            contrast: 1.9,
-            brightness: 1.08,
-            threshold: null
-          })
-        }
-      ];
-    }
-
-    async function asegurarWorkerOCR() {
-      if (ocrInicializado && ocrWorker) {
-        return ocrWorker;
-      }
-
-      mostrarEstado('Inicializando OCR por primera vez... esto puede tardar un poco.', 'info');
-
-      const oemMode = (window.Tesseract && Tesseract.OEM && Tesseract.OEM.DEFAULT != null)
-        ? Tesseract.OEM.DEFAULT
-        : 1;
-
-      ocrWorker = await Tesseract.createWorker('eng', oemMode, {
-        logger: m => {
-          if (m && m.status) {
-            const pct = m.progress ? ' ' + Math.round(m.progress * 100) + '%' : '';
-            mostrarEstado('OCR: ' + m.status + pct, 'info');
-          }
-        }
-      });
-
-      await ocrWorker.setParameters({
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-        tessedit_pageseg_mode: 7,
-        preserve_interword_spaces: '0',
-        user_defined_dpi: '300'
-      });
-
-      ocrInicializado = true;
-      return ocrWorker;
-    }
-
-    async function leerPatenteOCR(auto = false) {
-      if (ocrEnProceso) return;
 
       limpiarEstado();
 
@@ -998,177 +814,146 @@
           return;
         }
 
-        ocrEnProceso = true;
-        setOcrTexto('Preparando OCR...');
-        const worker = await asegurarWorkerOCR();
-        const candidates = construirCandidatosOCR();
+        lecturaIAEnProceso = true;
+        setIATexto('Enviando imagen al backend para leer patente...');
+        mostrarEstado('Consultando Plate Recognizer...', 'info');
 
-        if (!candidates.length) {
-          throw new Error('No se pudo preparar la imagen para OCR.');
-        }
+        const patenteActual = normalizarPatenteInput(patenteInput().value);
+        const timestamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+        const fileName = 'LECTURA_' + limpiarNombreArchivo(patenteActual || 'CAPTURA') + '_' + Date.now() + '.jpg';
 
-        let bestOverall = null;
-        const lines = [];
+        const payload = await postToAppsScriptIframe(
+          'leerpatenteapi',
+          {
+            imageBase64: dataUrlToBase64(imagenCapturadaBase64),
+            mimeType: 'image/jpeg',
+            fileName: fileName,
+            cameraId: 'KRUGGER_PORTERIA_2',
+            timestamp: timestamp
+          },
+          'KRUGGER_PLATE_API',
+          35000
+        );
 
-        for (let i = 0; i < candidates.length; i++) {
-          const candidate = candidates[i];
+        const candidatesText = Array.isArray(payload.candidates) && payload.candidates.length
+          ? payload.candidates
+              .map((c, i) => `${i + 1}. ${c.plate || ''} | score: ${Number(c.score || 0).toFixed(4)} | fuente: ${c.source || ''}`)
+              .join('\n')
+          : 'Sin candidatos adicionales';
 
-          mostrarEstado(`OCR ${i + 1}/${candidates.length}: ${candidate.name}...`, 'info');
+        if (payload.encontradoMotor && payload.patenteDetectada) {
+          const patenteDetectada = normalizarPatenteInput(payload.patenteDetectada);
+          patenteInput().value = patenteDetectada;
+          lastSearchedPatente = patenteDetectada;
 
-          const result = await worker.recognize(candidate.canvas);
-          const rawText = result?.data?.text || '';
-          const confidence = Number(result?.data?.confidence || 0);
+          currentLookup = payload.encontradoEnBase
+            ? {
+                encontrado: true,
+                patenteOriginal: payload.patenteDetectada,
+                patenteNormalizada: payload.patenteNormalizada || patenteDetectada,
+                nombre: payload.nombre || '',
+                jefatura: payload.jefatura || '',
+                tipoVehiculo: payload.tipoVehiculo || '',
+                planta: payload.planta || '',
+                estado: 'ENCONTRADO'
+              }
+            : {
+                encontrado: false,
+                patenteNormalizada: payload.patenteNormalizada || patenteDetectada
+              };
 
-          const bestPlate = elegirMejorPatenteDesdeTexto(rawText, confidence);
-
-          lines.push(
-            `[${candidate.name}]`,
-            `Confianza OCR: ${confidence.toFixed(2)}`,
-            `Texto bruto: ${rawText.trim() || '(vacío)'}`,
-            `Patente probable: ${bestPlate ? bestPlate.plate : 'No encontrada'}`,
-            ``
-          );
-
-          if (bestPlate && (!bestOverall || bestPlate.score > bestOverall.score)) {
-            bestOverall = {
-              ...bestPlate,
-              confidence,
-              attempt: candidate.name,
-              rawText: rawText
-            };
+          if (payload.encontradoEnBase) {
+            fillLookupFields(currentLookup);
+            mostrarEstado('Patente detectada y encontrada en base. Ahora puedes registrar el movimiento.', 'ok');
+          } else {
+            clearLookupFields();
+            estadoInfo().value = 'SIN REGISTRO';
+            mostrarEstado('Patente detectada, pero no aparece en la base. Puedes completar manualmente y registrar.', 'error');
           }
 
-          if (bestOverall && bestOverall.score >= 112) {
-            break;
-          }
-        }
-
-        if (bestOverall) {
-          patenteInput().value = normalizarPatenteInput(bestOverall.plate);
-
-          setOcrTexto(
-            `MEJOR RESULTADO\n` +
-            `Patente: ${bestOverall.plate}\n` +
-            `Origen: ${bestOverall.source}\n` +
-            `Formato: ${bestOverall.mask}\n` +
-            `Intento: ${bestOverall.attempt}\n` +
-            `Confianza OCR: ${bestOverall.confidence.toFixed(2)}\n` +
-            `Cambios por corrección: ${bestOverall.changes}\n\n` +
-            `DETALLE DE INTENTOS\n` +
-            lines.join('\n')
+          setIATexto(
+            `LECTURA IA EXITOSA\n` +
+            `Patente detectada: ${payload.patenteDetectada || ''}\n` +
+            `Patente normalizada: ${payload.patenteNormalizada || ''}\n` +
+            `Score: ${Number(payload.score || 0).toFixed(4)}\n` +
+            `DScore: ${Number(payload.dscore || 0).toFixed(4)}\n` +
+            `Región: ${payload.regionCode || ''}\n` +
+            `Estrategia match: ${payload.matchStrategy || ''}\n` +
+            `En base: ${payload.encontradoEnBase ? 'Sí' : 'No'}\n` +
+            `Mensaje: ${payload.mensaje || ''}\n\n` +
+            `CANDIDATOS\n${candidatesText}`
           );
 
-          mostrarEstado(`OCR completado. Patente detectada: ${bestOverall.plate}. Buscando en la base...`, 'ok');
-          await buscarPatente();
+          const box = document.getElementById('resultado');
+          box.style.display = 'block';
+
+          if (payload.encontradoEnBase) {
+            box.className = 'resultado encontrado';
+            box.innerHTML = `
+              <h3>Vehículo encontrado por IA</h3>
+              <div class="campo-resultado"><strong>Patente detectada:</strong> ${payload.patenteDetectada || ''}</div>
+              <div class="campo-resultado"><strong>Patente normalizada:</strong> ${payload.patenteNormalizada || ''}</div>
+              <div class="campo-resultado"><strong>Nombre:</strong> ${payload.nombre || ''}</div>
+              <div class="campo-resultado"><strong>Jefatura:</strong> ${payload.jefatura || ''}</div>
+              <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${payload.tipoVehiculo || ''}</div>
+              <div class="campo-resultado"><strong>Planta:</strong> ${payload.planta || ''}</div>
+            `;
+          } else {
+            box.className = 'resultado no-encontrado';
+            box.innerHTML = `
+              <h3>Patente detectada por IA, pero sin registro</h3>
+              <div class="campo-resultado"><strong>Patente detectada:</strong> ${payload.patenteDetectada || ''}</div>
+              <div class="campo-resultado"><strong>Patente normalizada:</strong> ${payload.patenteNormalizada || ''}</div>
+              <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO EN BASE</div>
+            `;
+          }
 
         } else {
-          setOcrTexto(
-            `NO SE DETECTÓ UNA PATENTE CLARA.\n\nDETALLE DE INTENTOS\n` +
-            lines.join('\n')
+          currentLookup = null;
+          clearLookupFields();
+
+          setIATexto(
+            `NO SE DETECTÓ UNA PATENTE CLARA.\n` +
+            `Mensaje: ${payload.mensaje || 'Sin detalle'}\n\n` +
+            `CANDIDATOS\n${candidatesText}`
           );
 
           mostrarEstado(
             auto
-              ? 'OCR automático completado, pero no se detectó una patente clara.'
-              : 'OCR completado, pero no se detectó una patente clara.',
+              ? 'Lectura IA automática completada, pero no se detectó una patente clara.'
+              : 'La lectura IA no detectó una patente clara.',
             'error'
           );
         }
 
       } catch (error) {
-        setOcrTexto('Error OCR: ' + error.message);
-        mostrarEstado('Error al ejecutar OCR: ' + error.message, 'error');
+        setIATexto('Error lectura IA: ' + error.message);
+        mostrarEstado('Error al leer patente con IA: ' + error.message, 'error');
       } finally {
-        ocrEnProceso = false;
+        lecturaIAEnProceso = false;
       }
     }
 
-    function subirEvidencia(patente) {
-      return new Promise((resolve, reject) => {
-        try {
-          validarBackend();
+    async function subirEvidencia(patente) {
+      if (!imagenCapturadaBase64) {
+        return '';
+      }
 
-          if (!imagenCapturadaBase64) {
-            resolve('');
-            return;
-          }
+      const fileName = 'EVIDENCIA_' + limpiarNombreArchivo(patente || 'SINPATENTE') + '_' + Date.now() + '.jpg';
 
-          const imageBase64 = dataUrlToBase64(imagenCapturadaBase64);
-          if (!imageBase64) {
-            resolve('');
-            return;
-          }
+      const payload = await postToAppsScriptIframe(
+        'uploadevidencia',
+        {
+          imageBase64: dataUrlToBase64(imagenCapturadaBase64),
+          mimeType: 'image/jpeg',
+          fileName: fileName,
+          patente: patente || ''
+        },
+        'KRUGGER_UPLOAD',
+        35000
+      );
 
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.action = APPS_SCRIPT_URL;
-          form.target = 'uploadFrame';
-          form.style.display = 'none';
-
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const fileName = 'EVIDENCIA_' + limpiarNombreArchivo(patente) + '_' + timestamp + '.jpg';
-
-          const fields = {
-            action: 'uploadEvidencia',
-            patente: patente,
-            mimeType: 'image/jpeg',
-            fileName: fileName,
-            imageBase64: imageBase64
-          };
-
-          Object.entries(fields).forEach(([key, value]) => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key;
-            input.value = value || '';
-            form.appendChild(input);
-          });
-
-          let timeoutId = null;
-
-          function cleanup() {
-            if (timeoutId) clearTimeout(timeoutId);
-            window.removeEventListener('message', onMessage);
-            if (form.parentNode) form.parentNode.removeChild(form);
-          }
-
-          function onMessage(event) {
-            let payload = event.data;
-
-            if (typeof payload === 'string') {
-              try {
-                payload = JSON.parse(payload);
-              } catch (e) {
-                return;
-              }
-            }
-
-            if (!payload || payload.source !== 'KRUGGER_UPLOAD') {
-              return;
-            }
-
-            cleanup();
-
-            if (payload.ok) {
-              resolve(payload.url || '');
-            } else {
-              reject(new Error(payload.error || 'Error al subir evidencia.'));
-            }
-          }
-
-          timeoutId = setTimeout(() => {
-            cleanup();
-            reject(new Error('La subida de evidencia tardó demasiado.'));
-          }, 30000);
-
-          window.addEventListener('message', onMessage);
-          document.body.appendChild(form);
-          form.submit();
-
-        } catch (error) {
-          reject(error);
-        }
-      });
+      return payload.url || '';
     }
 
     async function buscarPatente() {
@@ -1203,7 +988,7 @@
             <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
             <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO</div>
           `;
-          mostrarEstado('La patente no tiene registro en la base. Si corresponde, igual puedes registrarla.', 'error');
+          mostrarEstado('La patente no tiene registro en la base. Si corresponde, igual puedes completarla manualmente y registrar.', 'error');
         }
 
       } catch (error) {
@@ -1290,10 +1075,10 @@
 
         box.innerHTML = `
           <h3>Movimiento registrado</h3>
-          <div class="campo-resultado"><strong>Tipo movimiento:</strong> ${data.tipoMovimiento}</div>
-          <div class="campo-resultado"><strong>Patente leída:</strong> ${data.patenteLeida}</div>
-          <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada}</div>
-          <div class="campo-resultado"><strong>Resultado:</strong> ${data.resultado}</div>
+          <div class="campo-resultado"><strong>Tipo movimiento:</strong> ${data.tipoMovimiento || ''}</div>
+          <div class="campo-resultado"><strong>Patente leída:</strong> ${data.patenteLeida || ''}</div>
+          <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
+          <div class="campo-resultado"><strong>Resultado:</strong> ${data.resultado || ''}</div>
           <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || nombreManual || 'Sin registro'}</div>
           <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || jefaturaManual || ''}</div>
           <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || tipoVehiculoManual || ''}</div>
