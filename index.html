@@ -97,6 +97,13 @@
       resize: vertical;
     }
 
+    .acciones {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
     .acciones-3 {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -111,6 +118,16 @@
       font-size: 16px;
       font-weight: bold;
       cursor: pointer;
+    }
+
+    .btn-buscar {
+      background: #2563eb;
+      color: white;
+    }
+
+    .btn-registrar {
+      background: #059669;
+      color: white;
     }
 
     .btn-camara {
@@ -152,6 +169,34 @@
       display: block;
       background: #fee2e2;
       color: #991b1b;
+    }
+
+    .resultado {
+      display: none;
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 14px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+    }
+
+    .resultado h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    .campo-resultado {
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .encontrado {
+      border-left: 6px solid #059669;
+    }
+
+    .no-encontrado {
+      border-left: 6px solid #dc2626;
     }
 
     .camara-box {
@@ -214,18 +259,8 @@
       color: #6b7280;
     }
 
-    .resultado-local {
-      margin-top: 14px;
-      padding: 14px;
-      border-radius: 14px;
-      background: #f9fafb;
-      border-left: 6px solid #2563eb;
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
     @media (max-width: 700px) {
-      .row, .acciones-3 {
+      .row, .acciones, .acciones-3 {
         grid-template-columns: 1fr;
       }
 
@@ -239,7 +274,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Registro de Patentes KRUGGER</h1>
-      <div class="sub">Prueba inicial en GitHub Pages para validar cámara y captura local.</div>
+      <div class="sub">Frontend en GitHub Pages + backend en Apps Script.</div>
 
       <div class="tipo-box">
         <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
@@ -275,7 +310,13 @@
         </div>
       </div>
 
+      <div class="acciones">
+        <button class="btn btn-buscar" onclick="buscarPatente()">Buscar patente</button>
+        <button class="btn btn-registrar" onclick="registrarMovimiento()">Registrar movimiento</button>
+      </div>
+
       <div id="estado" class="estado"></div>
+      <div id="resultado" class="resultado"></div>
 
       <div class="camara-box">
         <h2>Cámara</h2>
@@ -297,21 +338,16 @@
           <img id="fotoPreview" alt="Foto capturada" />
         </div>
 
-        <div class="resultado-local">
-          En esta etapa solo validamos 3 cosas:
-          <br>1. que GitHub Pages abra la cámara,
-          <br>2. que puedas capturar una foto,
-          <br>3. que la imagen quede visible abajo.
-        </div>
-
         <div class="nota">
-          Después conectamos esta pantalla al backend de Google Sheets y luego al lector de patente.
+          En este paso la foto sigue siendo local. Primero conectamos búsqueda y registro.
         </div>
       </div>
     </div>
   </div>
 
   <script>
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyXNor8ClfJgp6VtEB8kBL2bEOHxT6qKSGYOdznv9fKzTZq6iUpOj2Tcp-0dFlvGOLT/exec';
+
     let tipoMovimiento = 'ENTRADA';
     let currentStream = null;
     let imagenCapturadaBase64 = '';
@@ -332,6 +368,64 @@
       const box = document.getElementById('estado');
       box.className = 'estado';
       box.textContent = '';
+    }
+
+    function validarBackend() {
+      if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('PEGAR_AQUI_URL_EXEC')) {
+        throw new Error('Debes pegar tu URL /exec de Apps Script en APPS_SCRIPT_URL.');
+      }
+    }
+
+    function jsonpRequest(action, params = {}) {
+      return new Promise((resolve, reject) => {
+        try {
+          validarBackend();
+
+          const callbackName = 'jsonp_cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+          const script = document.createElement('script');
+          const url = new URL(APPS_SCRIPT_URL);
+
+          url.searchParams.set('action', action);
+          url.searchParams.set('callback', callbackName);
+
+          Object.entries(params).forEach(([key, value]) => {
+            url.searchParams.set(key, value == null ? '' : String(value));
+          });
+
+          let timeoutId = null;
+
+          function limpiar() {
+            if (timeoutId) clearTimeout(timeoutId);
+            if (script.parentNode) script.parentNode.removeChild(script);
+            try {
+              delete window[callbackName];
+            } catch (e) {
+              window[callbackName] = undefined;
+            }
+          }
+
+          window[callbackName] = function(response) {
+            limpiar();
+            resolve(response);
+          };
+
+          script.onerror = function() {
+            limpiar();
+            reject(new Error('No se pudo conectar con el backend.'));
+          };
+
+          timeoutId = setTimeout(() => {
+            limpiar();
+            reject(new Error('La solicitud tardó demasiado.'));
+          }, 20000);
+
+          script.src = url.toString();
+          document.body.appendChild(script);
+
+        } catch (error) {
+          reject(error);
+        }
+      });
     }
 
     async function abrirCamara() {
@@ -416,6 +510,124 @@
       fotoBox.style.display = 'block';
 
       mostrarEstado('Foto capturada correctamente.', 'ok');
+    }
+
+    async function buscarPatente() {
+      limpiarEstado();
+
+      try {
+        const patente = document.getElementById('patente').value.trim();
+
+        if (!patente) {
+          mostrarEstado('Debes ingresar una patente.', 'error');
+          return;
+        }
+
+        mostrarEstado('Buscando patente...', 'info');
+
+        const data = await jsonpRequest('buscar', {
+          patente: patente
+        });
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Error desconocido al buscar.');
+        }
+
+        const box = document.getElementById('resultado');
+        box.style.display = 'block';
+
+        if (data.encontrado) {
+          box.className = 'resultado encontrado';
+          box.innerHTML = `
+            <h3>Vehículo encontrado</h3>
+            <div class="campo-resultado"><strong>Patente original:</strong> ${data.patenteOriginal || ''}</div>
+            <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
+            <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || ''}</div>
+            <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || ''}</div>
+            <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
+            <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
+          `;
+          mostrarEstado('Patente encontrada correctamente.', 'ok');
+        } else {
+          box.className = 'resultado no-encontrado';
+          box.innerHTML = `
+            <h3>Patente sin registro</h3>
+            <div class="campo-resultado"><strong>Patente ingresada:</strong> ${patente}</div>
+            <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
+            <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO</div>
+          `;
+          mostrarEstado('La patente no tiene registro en la base.', 'error');
+        }
+
+      } catch (error) {
+        mostrarEstado('Error al buscar: ' + error.message, 'error');
+      }
+    }
+
+    async function registrarMovimiento() {
+      limpiarEstado();
+
+      try {
+        const patente = document.getElementById('patente').value.trim();
+        const guardia = document.getElementById('guardia').value.trim();
+        const acceso = document.getElementById('acceso').value.trim();
+        const acompanante = document.getElementById('acompanante').value.trim();
+        const observacion = document.getElementById('observacion').value.trim();
+
+        if (!patente) {
+          mostrarEstado('Debes ingresar una patente.', 'error');
+          return;
+        }
+
+        if (!guardia) {
+          mostrarEstado('Debes ingresar el nombre del guardia.', 'error');
+          return;
+        }
+
+        if (!acceso) {
+          mostrarEstado('Debes ingresar el acceso.', 'error');
+          return;
+        }
+
+        mostrarEstado('Registrando movimiento...', 'info');
+
+        const data = await jsonpRequest('registrar', {
+          patente: patente,
+          tipoMovimiento: tipoMovimiento,
+          guardia: guardia,
+          acceso: acceso,
+          acompanante: acompanante,
+          observacion: observacion,
+          evidenciaUrl: ''
+        });
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Error desconocido al registrar.');
+        }
+
+        const box = document.getElementById('resultado');
+        box.style.display = 'block';
+        box.className = data.resultado === 'ENCONTRADO'
+          ? 'resultado encontrado'
+          : 'resultado no-encontrado';
+
+        box.innerHTML = `
+          <h3>Movimiento registrado</h3>
+          <div class="campo-resultado"><strong>Tipo movimiento:</strong> ${data.tipoMovimiento}</div>
+          <div class="campo-resultado"><strong>Patente leída:</strong> ${data.patenteLeida}</div>
+          <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada}</div>
+          <div class="campo-resultado"><strong>Resultado:</strong> ${data.resultado}</div>
+          <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || 'Sin registro'}</div>
+          <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || ''}</div>
+          <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
+          <div class="campo-resultado"><strong>Foto capturada:</strong> ${imagenCapturadaBase64 ? 'Sí (local)' : 'No'}</div>
+        `;
+
+        mostrarEstado('Movimiento registrado correctamente en Google Sheets.', 'ok');
+
+      } catch (error) {
+        mostrarEstado('Error al registrar: ' + error.message, 'error');
+      }
     }
   </script>
 </body>
