@@ -259,6 +259,12 @@
       color: #6b7280;
     }
 
+    .link-evidencia {
+      color: #2563eb;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
     @media (max-width: 700px) {
       .row, .acciones, .acciones-3 {
         grid-template-columns: 1fr;
@@ -274,7 +280,7 @@
   <div class="wrap">
     <div class="card">
       <h1>Registro de Patentes KRUGGER</h1>
-      <div class="sub">Frontend en GitHub Pages + backend en Apps Script.</div>
+      <div class="sub">Frontend en GitHub Pages + backend en Apps Script + evidencia en Drive.</div>
 
       <div class="tipo-box">
         <button id="btnEntrada" class="tipo-btn activo" onclick="seleccionarTipo('ENTRADA')">ENTRADA</button>
@@ -332,6 +338,7 @@
         </div>
 
         <canvas id="canvas"></canvas>
+        <iframe id="uploadFrame" name="uploadFrame" style="display:none;"></iframe>
 
         <div id="fotoBox" class="foto-box">
           <div class="foto-label">Foto capturada</div>
@@ -339,7 +346,7 @@
         </div>
 
         <div class="nota">
-          En este paso la foto sigue siendo local. Primero conectamos búsqueda y registro.
+          Si registras con foto capturada, la evidencia se subirá a Google Drive y quedará guardada en la planilla.
         </div>
       </div>
     </div>
@@ -372,7 +379,7 @@
 
     function validarBackend() {
       if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('PEGAR_AQUI_URL_EXEC')) {
-        throw new Error('Debes pegar tu URL /exec de Apps Script en APPS_SCRIPT_URL.');
+        throw new Error('Debes pegar tu URL /exec real de Apps Script en APPS_SCRIPT_URL.');
       }
     }
 
@@ -504,12 +511,112 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, width, height);
 
-      imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.92);
+      imagenCapturadaBase64 = canvas.toDataURL('image/jpeg', 0.80);
 
       fotoPreview.src = imagenCapturadaBase64;
       fotoBox.style.display = 'block';
 
       mostrarEstado('Foto capturada correctamente.', 'ok');
+    }
+
+    function dataUrlToBase64(dataUrl) {
+      if (!dataUrl || !dataUrl.includes(',')) return '';
+      return dataUrl.split(',')[1];
+    }
+
+    function limpiarNombreArchivo(texto) {
+      return String(texto || 'SINPATENTE')
+        .toUpperCase()
+        .replace(/[^A-Z0-9_-]/g, '_');
+    }
+
+    function subirEvidencia(patente) {
+      return new Promise((resolve, reject) => {
+        try {
+          validarBackend();
+
+          if (!imagenCapturadaBase64) {
+            resolve('');
+            return;
+          }
+
+          const imageBase64 = dataUrlToBase64(imagenCapturadaBase64);
+
+          if (!imageBase64) {
+            resolve('');
+            return;
+          }
+
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.action = APPS_SCRIPT_URL;
+          form.target = 'uploadFrame';
+          form.style.display = 'none';
+
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const fileName = 'EVIDENCIA_' + limpiarNombreArchivo(patente) + '_' + timestamp + '.jpg';
+
+          const fields = {
+            action: 'uploadEvidencia',
+            patente: patente,
+            mimeType: 'image/jpeg',
+            fileName: fileName,
+            imageBase64: imageBase64
+          };
+
+          Object.entries(fields).forEach(([key, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value || '';
+            form.appendChild(input);
+          });
+
+          let timeoutId = null;
+
+          function cleanup() {
+            if (timeoutId) clearTimeout(timeoutId);
+            window.removeEventListener('message', onMessage);
+            if (form.parentNode) form.parentNode.removeChild(form);
+          }
+
+          function onMessage(event) {
+            let payload = event.data;
+
+            if (typeof payload === 'string') {
+              try {
+                payload = JSON.parse(payload);
+              } catch (e) {
+                return;
+              }
+            }
+
+            if (!payload || payload.source !== 'KRUGGER_UPLOAD') {
+              return;
+            }
+
+            cleanup();
+
+            if (payload.ok) {
+              resolve(payload.url || '');
+            } else {
+              reject(new Error(payload.error || 'Error al subir evidencia.'));
+            }
+          }
+
+          timeoutId = setTimeout(() => {
+            cleanup();
+            reject(new Error('La subida de evidencia tardó demasiado.'));
+          }, 30000);
+
+          window.addEventListener('message', onMessage);
+          document.body.appendChild(form);
+          form.submit();
+
+        } catch (error) {
+          reject(error);
+        }
+      });
     }
 
     async function buscarPatente() {
@@ -589,7 +696,14 @@
           return;
         }
 
-        mostrarEstado('Registrando movimiento...', 'info');
+        let evidenciaUrl = '';
+
+        if (imagenCapturadaBase64) {
+          mostrarEstado('Subiendo foto evidencia a Drive...', 'info');
+          evidenciaUrl = await subirEvidencia(patente);
+        }
+
+        mostrarEstado('Registrando movimiento en Google Sheets...', 'info');
 
         const data = await jsonpRequest('registrar', {
           patente: patente,
@@ -598,7 +712,7 @@
           acceso: acceso,
           acompanante: acompanante,
           observacion: observacion,
-          evidenciaUrl: ''
+          evidenciaUrl: evidenciaUrl
         });
 
         if (!data.ok) {
@@ -620,10 +734,14 @@
           <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || 'Sin registro'}</div>
           <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || ''}</div>
           <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
-          <div class="campo-resultado"><strong>Foto capturada:</strong> ${imagenCapturadaBase64 ? 'Sí (local)' : 'No'}</div>
+          <div class="campo-resultado"><strong>Evidencia:</strong> ${
+            evidenciaUrl
+              ? `<a class="link-evidencia" href="${evidenciaUrl}" target="_blank">Abrir evidencia</a>`
+              : 'Sin foto'
+          }</div>
         `;
 
-        mostrarEstado('Movimiento registrado correctamente en Google Sheets.', 'ok');
+        mostrarEstado('Movimiento registrado correctamente con evidencia.', 'ok');
 
       } catch (error) {
         mostrarEstado('Error al registrar: ' + error.message, 'error');
