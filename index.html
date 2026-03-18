@@ -336,11 +336,11 @@
           <label for="patente">Patente</label>
           <input id="patente" type="text" placeholder="Ejemplo: CRKF23" />
         </div>
-        <div>
-          <label for="guardia">Guardia</label>
-          <input id="guardia" type="text" placeholder="Nombre del guardia" />
-        </div>
-      </div>
+<div>
+  <label for="guardia">Guardia</label>
+  <input id="guardia" type="text" list="guardiasList" placeholder="Selecciona o escribe el nombre del guardia" />
+  <datalist id="guardiasList"></datalist>
+</div>
 
       <div class="row">
         <div>
@@ -444,17 +444,18 @@
     const estadoInfo = () => document.getElementById('estadoInfo');
     const plantaInfo = () => document.getElementById('plantaInfo');
 
-    document.addEventListener('DOMContentLoaded', () => {
-      patenteInput().addEventListener('input', onPatenteInput);
-      patenteInput().addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          buscarPatente();
-        }
-      });
+document.addEventListener('DOMContentLoaded', () => {
+  patenteInput().addEventListener('input', onPatenteInput);
+  patenteInput().addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPatente();
+    }
+  });
 
-      clearLookupFields();
-    });
+  clearLookupFields();
+  cargarListaGuardias();
+});
 
     function onPatenteInput() {
       const normalized = normalizarPatenteInput(patenteInput().value);
@@ -510,6 +511,28 @@
       estadoInfo().value = '';
       plantaInfo().value = '';
     }
+async function cargarListaGuardias() {
+  try {
+    const data = await jsonpRequest('guardias');
+
+    if (!data || !data.ok) {
+      return;
+    }
+
+    const datalist = document.getElementById('guardiasList');
+    datalist.innerHTML = '';
+
+    const guardias = Array.isArray(data.guardias) ? data.guardias : [];
+
+    for (let i = 0; i < guardias.length; i++) {
+      const option = document.createElement('option');
+      option.value = guardias[i];
+      datalist.appendChild(option);
+    }
+  } catch (error) {
+    console.log('No se pudo cargar la lista de guardias:', error);
+  }
+}
 
     function fillLookupFields(data) {
       if (!data) {
