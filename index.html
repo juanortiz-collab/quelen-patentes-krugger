@@ -336,11 +336,12 @@
           <label for="patente">Patente</label>
           <input id="patente" type="text" placeholder="Ejemplo: CRKF23" />
         </div>
-<div>
-  <label for="guardia">Guardia</label>
-  <input id="guardia" type="text" list="guardiasList" placeholder="Selecciona o escribe el nombre del guardia" />
-  <datalist id="guardiasList"></datalist>
-</div>
+        <div>
+          <label for="guardia">Guardia</label>
+          <input id="guardia" type="text" list="guardiasList" placeholder="Selecciona o escribe el nombre del guardia" />
+          <datalist id="guardiasList"></datalist>
+        </div>
+      </div>
 
       <div class="row">
         <div>
@@ -421,7 +422,8 @@
         </div>
 
         <div class="nota">
-          Al capturar la foto, el sistema intentará leer la patente con Plate Recognizer vía Apps Script. Después puedes registrar el movimiento.
+          Si la IA encuentra la patente en la base maestra, el movimiento se registrará automáticamente.
+          Si no la encuentra, puedes volver a tomar la foto o escribir la patente manualmente y usar "Buscar patente".
         </div>
       </div>
     </div>
@@ -430,32 +432,47 @@
   <script>
     const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzg9EBfRWR5UxnooCDLSUcF5-VKHXT67k8UhlbJZ07rXMHDQJCLiXxaBJiL1pM5eNe0/exec';
 
+    const STORAGE_KEYS = {
+      guardia: 'krugger_guardia',
+      acceso: 'krugger_acceso'
+    };
+
     let tipoMovimiento = 'ENTRADA';
     let currentStream = null;
     let imagenCapturadaBase64 = '';
     let lecturaIAEnProceso = false;
+    let registroEnProceso = false;
     let currentLookup = null;
     let lastSearchedPatente = '';
 
     const patenteInput = () => document.getElementById('patente');
+    const guardiaInput = () => document.getElementById('guardia');
+    const accesoInput = () => document.getElementById('acceso');
     const nombreInfo = () => document.getElementById('nombreInfo');
     const jefaturaInfo = () => document.getElementById('jefaturaInfo');
     const tipoVehiculoInfo = () => document.getElementById('tipoVehiculoInfo');
     const estadoInfo = () => document.getElementById('estadoInfo');
     const plantaInfo = () => document.getElementById('plantaInfo');
 
-document.addEventListener('DOMContentLoaded', () => {
-  patenteInput().addEventListener('input', onPatenteInput);
-  patenteInput().addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      buscarPatente();
-    }
-  });
+    document.addEventListener('DOMContentLoaded', () => {
+      patenteInput().addEventListener('input', onPatenteInput);
+      patenteInput().addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          buscarPatente();
+        }
+      });
 
-  clearLookupFields();
-  cargarListaGuardias();
-});
+      guardiaInput().addEventListener('change', guardarSesionOperador);
+      guardiaInput().addEventListener('input', guardarSesionOperador);
+      accesoInput().addEventListener('change', guardarSesionOperador);
+      accesoInput().addEventListener('input', guardarSesionOperador);
+
+      clearLookupFields();
+      restaurarSesionOperador();
+      cargarListaGuardias();
+      patenteInput().focus();
+    });
 
     function onPatenteInput() {
       const normalized = normalizarPatenteInput(patenteInput().value);
@@ -511,28 +528,85 @@ document.addEventListener('DOMContentLoaded', () => {
       estadoInfo().value = '';
       plantaInfo().value = '';
     }
-async function cargarListaGuardias() {
-  try {
-    const data = await jsonpRequest('guardias');
 
-    if (!data || !data.ok) {
-      return;
+    function guardarSesionOperador() {
+      try {
+        localStorage.setItem(STORAGE_KEYS.guardia, guardiaInput().value.trim());
+        localStorage.setItem(STORAGE_KEYS.acceso, accesoInput().value.trim());
+      } catch (error) {
+        console.log('No se pudo guardar la sesión local del operador:', error);
+      }
     }
 
-    const datalist = document.getElementById('guardiasList');
-    datalist.innerHTML = '';
+    function restaurarSesionOperador() {
+      try {
+        const guardiaGuardado = localStorage.getItem(STORAGE_KEYS.guardia) || '';
+        const accesoGuardado = localStorage.getItem(STORAGE_KEYS.acceso) || '';
 
-    const guardias = Array.isArray(data.guardias) ? data.guardias : [];
+        if (guardiaGuardado) {
+          guardiaInput().value = guardiaGuardado;
+        }
 
-    for (let i = 0; i < guardias.length; i++) {
-      const option = document.createElement('option');
-      option.value = guardias[i];
-      datalist.appendChild(option);
+        if (accesoGuardado) {
+          accesoInput().value = accesoGuardado;
+        }
+      } catch (error) {
+        console.log('No se pudo restaurar la sesión local del operador:', error);
+      }
     }
-  } catch (error) {
-    console.log('No se pudo cargar la lista de guardias:', error);
-  }
-}
+
+    function validarCamposPreviosRegistro(modoFoto = false) {
+      const guardia = guardiaInput().value.trim();
+      const acceso = accesoInput().value.trim();
+
+      if (!guardia) {
+        mostrarEstado(
+          modoFoto
+            ? 'Selecciona el guardia antes de tomar la foto.'
+            : 'Debes ingresar el nombre del guardia.',
+          'error'
+        );
+        guardiaInput().focus();
+        return false;
+      }
+
+      if (!acceso) {
+        mostrarEstado(
+          modoFoto
+            ? 'Debes indicar el acceso antes de tomar la foto.'
+            : 'Debes ingresar el acceso.',
+          'error'
+        );
+        accesoInput().focus();
+        return false;
+      }
+
+      guardarSesionOperador();
+      return true;
+    }
+
+    async function cargarListaGuardias() {
+      try {
+        const data = await jsonpRequest('guardias');
+
+        if (!data || !data.ok) {
+          return;
+        }
+
+        const datalist = document.getElementById('guardiasList');
+        datalist.innerHTML = '';
+
+        const guardias = Array.isArray(data.guardias) ? data.guardias : [];
+
+        for (let i = 0; i < guardias.length; i++) {
+          const option = document.createElement('option');
+          option.value = guardias[i];
+          datalist.appendChild(option);
+        }
+      } catch (error) {
+        console.log('No se pudo cargar la lista de guardias:', error);
+      }
+    }
 
     function fillLookupFields(data) {
       if (!data) {
@@ -773,6 +847,10 @@ async function cargarListaGuardias() {
     async function capturarFoto() {
       limpiarEstado();
 
+      if (!validarCamposPreviosRegistro(true)) {
+        return;
+      }
+
       const video = document.getElementById('video');
       const canvas = document.getElementById('canvas');
       const fotoPreview = document.getElementById('fotoPreview');
@@ -825,7 +903,7 @@ async function cargarListaGuardias() {
     }
 
     async function leerPatenteIA(auto = false) {
-      if (lecturaIAEnProceso) {
+      if (lecturaIAEnProceso || registroEnProceso) {
         return;
       }
 
@@ -887,30 +965,22 @@ async function cargarListaGuardias() {
 
           if (payload.encontradoEnBase) {
             fillLookupFields(currentLookup);
-            mostrarEstado('Patente detectada y encontrada en base. Ahora puedes registrar el movimiento.', 'ok');
-          } else {
-            clearLookupFields();
-            estadoInfo().value = 'SIN REGISTRO';
-            mostrarEstado('Patente detectada, pero no aparece en la base. Puedes completar manualmente y registrar.', 'error');
-          }
 
-          setIATexto(
-            `LECTURA IA EXITOSA\n` +
-            `Patente detectada: ${payload.patenteDetectada || ''}\n` +
-            `Patente normalizada: ${payload.patenteNormalizada || ''}\n` +
-            `Score: ${Number(payload.score || 0).toFixed(4)}\n` +
-            `DScore: ${Number(payload.dscore || 0).toFixed(4)}\n` +
-            `Región: ${payload.regionCode || ''}\n` +
-            `Estrategia match: ${payload.matchStrategy || ''}\n` +
-            `En base: ${payload.encontradoEnBase ? 'Sí' : 'No'}\n` +
-            `Mensaje: ${payload.mensaje || ''}\n\n` +
-            `CANDIDATOS\n${candidatesText}`
-          );
+            setIATexto(
+              `LECTURA IA EXITOSA\n` +
+              `Patente detectada: ${payload.patenteDetectada || ''}\n` +
+              `Patente normalizada: ${payload.patenteNormalizada || ''}\n` +
+              `Score: ${Number(payload.score || 0).toFixed(4)}\n` +
+              `DScore: ${Number(payload.dscore || 0).toFixed(4)}\n` +
+              `Región: ${payload.regionCode || ''}\n` +
+              `Estrategia match: ${payload.matchStrategy || ''}\n` +
+              `En base: Sí\n` +
+              `Mensaje: ${payload.mensaje || ''}\n\n` +
+              `CANDIDATOS\n${candidatesText}`
+            );
 
-          const box = document.getElementById('resultado');
-          box.style.display = 'block';
-
-          if (payload.encontradoEnBase) {
+            const box = document.getElementById('resultado');
+            box.style.display = 'block';
             box.className = 'resultado encontrado';
             box.innerHTML = `
               <h3>Vehículo encontrado por IA</h3>
@@ -921,7 +991,25 @@ async function cargarListaGuardias() {
               <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${payload.tipoVehiculo || ''}</div>
               <div class="campo-resultado"><strong>Planta:</strong> ${payload.planta || ''}</div>
             `;
+
+            mostrarEstado('Patente detectada y encontrada en base. Registrando movimiento automáticamente...', 'info');
+            await registrarMovimientoAutomatico();
+
           } else {
+            clearLookupFields();
+            estadoInfo().value = 'SIN REGISTRO';
+
+            setIATexto(
+              `PATENTE DETECTADA, PERO NO ESTÁ EN BASE\n` +
+              `Patente detectada: ${payload.patenteDetectada || ''}\n` +
+              `Patente normalizada: ${payload.patenteNormalizada || ''}\n` +
+              `Score: ${Number(payload.score || 0).toFixed(4)}\n` +
+              `Mensaje: ${payload.mensaje || ''}\n\n` +
+              `CANDIDATOS\n${candidatesText}`
+            );
+
+            const box = document.getElementById('resultado');
+            box.style.display = 'block';
             box.className = 'resultado no-encontrado';
             box.innerHTML = `
               <h3>Patente detectada por IA, pero sin registro</h3>
@@ -929,6 +1017,8 @@ async function cargarListaGuardias() {
               <div class="campo-resultado"><strong>Patente normalizada:</strong> ${payload.patenteNormalizada || ''}</div>
               <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO EN BASE</div>
             `;
+
+            mostrarEstado('La IA leyó una patente, pero no está en la base. Puedes volver a tomar la foto o escribirla manualmente.', 'error');
           }
 
         } else {
@@ -943,7 +1033,7 @@ async function cargarListaGuardias() {
 
           mostrarEstado(
             auto
-              ? 'Lectura IA automática completada, pero no se detectó una patente clara.'
+              ? 'No se detectó una patente clara. Vuelve a tomar la foto o escribe la patente manualmente.'
               : 'La lectura IA no detectó una patente clara.',
             'error'
           );
@@ -1002,7 +1092,7 @@ async function cargarListaGuardias() {
             <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
             <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
           `;
-          mostrarEstado('Patente encontrada. Ahora presiona "Registrar movimiento" para dejar trazabilidad.', 'ok');
+          mostrarEstado('Patente encontrada y ficha rellena automáticamente. Si corresponde, ahora puedes registrar manualmente.', 'ok');
         } else {
           box.className = 'resultado no-encontrado';
           box.innerHTML = `
@@ -1020,12 +1110,37 @@ async function cargarListaGuardias() {
     }
 
     async function registrarMovimiento() {
+      return registrarMovimientoCore({ automatico: false });
+    }
+
+    async function registrarMovimientoAutomatico() {
+      return registrarMovimientoCore({ automatico: true });
+    }
+
+    async function registrarMovimientoCore({ automatico = false } = {}) {
+      if (registroEnProceso) {
+        return;
+      }
+
       limpiarEstado();
 
       try {
         const patente = normalizarPatenteInput(patenteInput().value);
-        const guardia = document.getElementById('guardia').value.trim();
-        const acceso = document.getElementById('acceso').value.trim();
+        patenteInput().value = patente;
+
+        if (!patente) {
+          mostrarEstado('No hay una patente lista para registrar.', 'error');
+          return;
+        }
+
+        if (!validarCamposPreviosRegistro(false)) {
+          return;
+        }
+
+        registroEnProceso = true;
+
+        const guardia = guardiaInput().value.trim();
+        const acceso = accesoInput().value.trim();
         const acompanante = document.getElementById('acompanante').value.trim();
         const observacion = document.getElementById('observacion').value.trim();
 
@@ -1034,43 +1149,38 @@ async function cargarListaGuardias() {
         const tipoVehiculoManual = tipoVehiculoInfo().value.trim();
         const plantaManual = plantaInfo().value.trim();
 
-        patenteInput().value = patente;
-
-        if (!patente) {
-          mostrarEstado('Debes ingresar una patente.', 'error');
-          return;
-        }
-
-        if (!guardia) {
-          mostrarEstado('Debes ingresar el nombre del guardia.', 'error');
-          return;
-        }
-
-        if (!acceso) {
-          mostrarEstado('Debes ingresar el acceso.', 'error');
-          return;
-        }
-
         let lookup = currentLookup;
 
         if (!lookup || lastSearchedPatente !== patente) {
           lookup = await consultarPatenteBackend(patente, false);
         }
 
-        if (lookup?.encontrado) {
-          mostrarEstado('Patente validada en base. Registrando movimiento...', 'info');
-        } else {
-          mostrarEstado('Patente sin registro en base. Registrando movimiento igualmente...', 'info');
+        if (automatico && !lookup?.encontrado) {
+          mostrarEstado(
+            'La patente fue leída por IA, pero no está en la base maestra. No se auto-registró.',
+            'error'
+          );
+          return;
         }
 
         let evidenciaUrl = '';
 
         if (imagenCapturadaBase64) {
-          mostrarEstado('Subiendo foto evidencia a Drive...', 'info');
+          mostrarEstado(
+            automatico
+              ? 'Subiendo evidencia y registrando movimiento automático...'
+              : 'Subiendo foto evidencia a Drive...',
+            'info'
+          );
           evidenciaUrl = await subirEvidencia(patente);
         }
 
-        mostrarEstado('Registrando movimiento en Google Sheets...', 'info');
+        mostrarEstado(
+          automatico
+            ? 'Registrando movimiento automático en Google Sheets...'
+            : 'Registrando movimiento en Google Sheets...',
+          'info'
+        );
 
         const data = await jsonpRequest('registrar', {
           patente: patente,
@@ -1087,7 +1197,7 @@ async function cargarListaGuardias() {
         });
 
         if (!data.ok) {
-          throw new Error(data.error || 'Error desconocido al registrar.');
+          throw new Error(data.error || 'No se pudo registrar el movimiento.');
         }
 
         const box = document.getElementById('resultado');
@@ -1097,27 +1207,39 @@ async function cargarListaGuardias() {
           : 'resultado no-encontrado';
 
         box.innerHTML = `
-          <h3>Movimiento registrado</h3>
-          <div class="campo-resultado"><strong>Tipo movimiento:</strong> ${data.tipoMovimiento || ''}</div>
+          <h3>${automatico ? 'Movimiento registrado automáticamente' : 'Movimiento registrado'}</h3>
+          <div class="campo-resultado"><strong>Tipo movimiento:</strong> ${data.tipoMovimiento}</div>
           <div class="campo-resultado"><strong>Patente leída:</strong> ${data.patenteLeida || ''}</div>
           <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
           <div class="campo-resultado"><strong>Resultado:</strong> ${data.resultado || ''}</div>
-          <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || nombreManual || 'Sin registro'}</div>
-          <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || jefaturaManual || ''}</div>
-          <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || tipoVehiculoManual || ''}</div>
-          <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || plantaManual || ''}</div>
-          <div class="campo-resultado"><strong>Evidencia:</strong> ${
+          <div class="campo-resultado"><strong>Nombre:</strong> ${data.nombre || 'Sin registro'}</div>
+          <div class="campo-resultado"><strong>Jefatura:</strong> ${data.jefatura || ''}</div>
+          <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
+          <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
+          <div class="campo-resultado"><strong>Guardia:</strong> ${guardia}</div>
+          <div class="campo-resultado"><strong>Acceso:</strong> ${acceso}</div>
+          ${
             evidenciaUrl
-              ? `<a class="link-evidencia" href="${evidenciaUrl}" target="_blank">Abrir evidencia</a>`
-              : 'Sin foto'
-          }</div>
+              ? `<div class="campo-resultado"><strong>Evidencia:</strong> <a class="link-evidencia" href="${evidenciaUrl}" target="_blank">Abrir evidencia</a></div>`
+              : ''
+          }
         `;
 
-        mostrarEstado('Movimiento registrado correctamente.', 'ok');
+        guardarSesionOperador();
+        mostrarEstado(
+          automatico
+            ? 'Movimiento registrado automáticamente. Listo para el siguiente vehículo.'
+            : 'Movimiento registrado correctamente.',
+          'ok'
+        );
+
         limpiarFormularioDespuesDeRegistro();
+        patenteInput().focus();
 
       } catch (error) {
         mostrarEstado('Error al registrar: ' + error.message, 'error');
+      } finally {
+        registroEnProceso = false;
       }
     }
   </script>
