@@ -117,9 +117,9 @@
       margin-top: 12px;
     }
 
-    .acciones-4 {
+    .acciones-3 {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 12px;
       margin-top: 10px;
     }
@@ -153,11 +153,6 @@
       color: #ffffff;
     }
 
-    .btn-ia {
-      background: #0ea5e9;
-      color: #ffffff;
-    }
-
     .btn-detener {
       background: #6b7280;
       color: #ffffff;
@@ -165,11 +160,12 @@
 
     .estado {
       margin-top: 14px;
-      padding: 12px;
+      padding: 14px;
       border-radius: 12px;
       font-size: 14px;
       display: none;
       white-space: pre-wrap;
+      font-weight: bold;
     }
 
     .estado.info {
@@ -278,12 +274,6 @@
       color: #6b7280;
     }
 
-    .link-evidencia {
-      color: #2563eb;
-      text-decoration: none;
-      font-weight: bold;
-    }
-
     .ocr-box {
       margin-top: 14px;
       padding: 14px;
@@ -310,7 +300,7 @@
     }
 
     @media (max-width: 800px) {
-      .row, .row-3, .acciones, .acciones-4 {
+      .row, .row-3, .acciones, .acciones-3 {
         grid-template-columns: 1fr;
       }
 
@@ -398,10 +388,9 @@
       <div class="camara-box">
         <h2>Lector de patente</h2>
 
-        <div class="acciones-4">
+        <div class="acciones-3">
           <button class="btn btn-camara" onclick="abrirCamara()">Abrir cámara</button>
           <button class="btn btn-captura" onclick="capturarFoto()">Capturar foto</button>
-          <button class="btn btn-ia" onclick="leerPatenteIA(false)">Leer patente IA</button>
           <button class="btn btn-detener" onclick="detenerCamara()">Detener cámara</button>
         </div>
 
@@ -422,8 +411,8 @@
         </div>
 
         <div class="nota">
-          Si la IA encuentra la patente en la base maestra, el movimiento se registrará automáticamente.
-          Si no la encuentra, puedes volver a tomar la foto o escribir la patente manualmente y usar "Buscar patente".
+          Al capturar la foto, la imagen quedará congelada para confirmar la toma.
+          No refrescar la página hasta ver el mensaje verde final: ENCONTRADO Y REGISTRADO CON ÉXITO.
         </div>
       </div>
     </div>
@@ -823,6 +812,9 @@
         const video = document.getElementById('video');
         video.srcObject = stream;
 
+        const fotoBox = document.getElementById('fotoBox');
+        fotoBox.style.display = 'none';
+
         mostrarEstado('Cámara abierta correctamente.', 'ok');
       } catch (error) {
         mostrarEstado('No se pudo abrir la cámara: ' + error.message, 'error');
@@ -885,8 +877,10 @@
       fotoPreview.src = imagenCapturadaBase64;
       fotoBox.style.display = 'block';
 
-      setIATexto('Foto capturada. Iniciando lectura IA...');
-      mostrarEstado('Foto capturada correctamente. Iniciando lectura IA...', 'info');
+      detenerCamara(false);
+
+      setIATexto('Foto capturada. Consultando Plate Recognizer...');
+      mostrarEstado('FOTO CAPTURADA. CONSULTANDO PLATE RECOGNIZER...', 'info');
 
       await leerPatenteIA(true);
     }
@@ -916,8 +910,8 @@
         }
 
         lecturaIAEnProceso = true;
-        setIATexto('Enviando imagen al backend para leer patente...');
-        mostrarEstado('Consultando Plate Recognizer...', 'info');
+        setIATexto('Consultando Plate Recognizer...');
+        mostrarEstado('CONSULTANDO PLATE RECOGNIZER...', 'info');
 
         const patenteActual = normalizarPatenteInput(patenteInput().value);
         const timestamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
@@ -992,7 +986,7 @@
               <div class="campo-resultado"><strong>Planta:</strong> ${payload.planta || ''}</div>
             `;
 
-            mostrarEstado('Patente detectada y encontrada en base. Registrando movimiento automáticamente...', 'info');
+            mostrarEstado('ENCONTRADO. REGISTRANDO EN BASE DE DATOS...', 'info');
             await registrarMovimientoAutomatico();
 
           } else {
@@ -1018,7 +1012,7 @@
               <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO EN BASE</div>
             `;
 
-            mostrarEstado('La IA leyó una patente, pero no está en la base. Puedes volver a tomar la foto o escribirla manualmente.', 'error');
+            mostrarEstado('PATENTE LEÍDA, PERO NO REGISTRADA EN BASE. VUELVE A TOMAR LA FOTO O ESCRÍBELA MANUALMENTE.', 'error');
           }
 
         } else {
@@ -1033,40 +1027,18 @@
 
           mostrarEstado(
             auto
-              ? 'No se detectó una patente clara. Vuelve a tomar la foto o escribe la patente manualmente.'
-              : 'La lectura IA no detectó una patente clara.',
+              ? 'NO SE DETECTÓ UNA PATENTE CLARA. VUELVE A TOMAR LA FOTO O ESCRÍBELA MANUALMENTE.'
+              : 'LA LECTURA IA NO DETECTÓ UNA PATENTE CLARA.',
             'error'
           );
         }
 
       } catch (error) {
         setIATexto('Error lectura IA: ' + error.message);
-        mostrarEstado('Error al leer patente con IA: ' + error.message, 'error');
+        mostrarEstado('ERROR AL LEER PATENTE CON IA: ' + error.message, 'error');
       } finally {
         lecturaIAEnProceso = false;
       }
-    }
-
-    async function subirEvidencia(patente) {
-      if (!imagenCapturadaBase64) {
-        return '';
-      }
-
-      const fileName = 'EVIDENCIA_' + limpiarNombreArchivo(patente || 'SINPATENTE') + '_' + Date.now() + '.jpg';
-
-      const payload = await postToAppsScriptIframe(
-        'uploadevidencia',
-        {
-          imageBase64: dataUrlToBase64(imagenCapturadaBase64),
-          mimeType: 'image/jpeg',
-          fileName: fileName,
-          patente: patente || ''
-        },
-        'KRUGGER_UPLOAD',
-        35000
-      );
-
-      return payload.url || '';
     }
 
     async function buscarPatente() {
@@ -1092,7 +1064,7 @@
             <div class="campo-resultado"><strong>Tipo vehículo:</strong> ${data.tipoVehiculo || ''}</div>
             <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
           `;
-          mostrarEstado('Patente encontrada y ficha rellena automáticamente. Si corresponde, ahora puedes registrar manualmente.', 'ok');
+          mostrarEstado('PATENTE ENCONTRADA. FICHA RELLENADA AUTOMÁTICAMENTE.', 'ok');
         } else {
           box.className = 'resultado no-encontrado';
           box.innerHTML = `
@@ -1101,11 +1073,11 @@
             <div class="campo-resultado"><strong>Patente normalizada:</strong> ${data.patenteNormalizada || ''}</div>
             <div class="campo-resultado"><strong>Estado:</strong> SIN REGISTRO</div>
           `;
-          mostrarEstado('La patente no tiene registro en la base. Si corresponde, igual puedes completarla manualmente y registrar.', 'error');
+          mostrarEstado('LA PATENTE NO TIENE REGISTRO EN LA BASE.', 'error');
         }
 
       } catch (error) {
-        mostrarEstado('Error al buscar: ' + error.message, 'error');
+        mostrarEstado('ERROR AL BUSCAR: ' + error.message, 'error');
       }
     }
 
@@ -1129,7 +1101,7 @@
         patenteInput().value = patente;
 
         if (!patente) {
-          mostrarEstado('No hay una patente lista para registrar.', 'error');
+          mostrarEstado('NO HAY UNA PATENTE LISTA PARA REGISTRAR.', 'error');
           return;
         }
 
@@ -1156,29 +1128,14 @@
         }
 
         if (automatico && !lookup?.encontrado) {
-          mostrarEstado(
-            'La patente fue leída por IA, pero no está en la base maestra. No se auto-registró.',
-            'error'
-          );
+          mostrarEstado('LA PATENTE FUE LEÍDA POR IA, PERO NO ESTÁ EN LA BASE MAESTRA. NO SE AUTO-REGISTRÓ.', 'error');
           return;
-        }
-
-        let evidenciaUrl = '';
-
-        if (imagenCapturadaBase64) {
-          mostrarEstado(
-            automatico
-              ? 'Subiendo evidencia y registrando movimiento automático...'
-              : 'Subiendo foto evidencia a Drive...',
-            'info'
-          );
-          evidenciaUrl = await subirEvidencia(patente);
         }
 
         mostrarEstado(
           automatico
-            ? 'Registrando movimiento automático en Google Sheets...'
-            : 'Registrando movimiento en Google Sheets...',
+            ? 'REGISTRANDO EN BASE DE DATOS...'
+            : 'REGISTRANDO MOVIMIENTO EN GOOGLE SHEETS...',
           'info'
         );
 
@@ -1189,7 +1146,7 @@
           acceso: acceso,
           acompanante: acompanante,
           observacion: observacion,
-          evidenciaUrl: evidenciaUrl,
+          evidenciaUrl: '',
           nombreManual: nombreManual,
           jefaturaManual: jefaturaManual,
           tipoVehiculoManual: tipoVehiculoManual,
@@ -1218,26 +1175,28 @@
           <div class="campo-resultado"><strong>Planta:</strong> ${data.planta || ''}</div>
           <div class="campo-resultado"><strong>Guardia:</strong> ${guardia}</div>
           <div class="campo-resultado"><strong>Acceso:</strong> ${acceso}</div>
-          ${
-            evidenciaUrl
-              ? `<div class="campo-resultado"><strong>Evidencia:</strong> <a class="link-evidencia" href="${evidenciaUrl}" target="_blank">Abrir evidencia</a></div>`
-              : ''
-          }
         `;
 
         guardarSesionOperador();
         mostrarEstado(
           automatico
-            ? 'Movimiento registrado automáticamente. Listo para el siguiente vehículo.'
-            : 'Movimiento registrado correctamente.',
+            ? 'ENCONTRADO Y REGISTRADO CON ÉXITO'
+            : 'REGISTRADO CON ÉXITO',
           'ok'
         );
 
-        limpiarFormularioDespuesDeRegistro();
-        patenteInput().focus();
+        setTimeout(async () => {
+          limpiarFormularioDespuesDeRegistro();
+          patenteInput().focus();
+          try {
+            await abrirCamara();
+          } catch (e) {
+            console.log('No se pudo reabrir la cámara automáticamente:', e);
+          }
+        }, 1200);
 
       } catch (error) {
-        mostrarEstado('Error al registrar: ' + error.message, 'error');
+        mostrarEstado('ERROR AL REGISTRAR: ' + error.message, 'error');
       } finally {
         registroEnProceso = false;
       }
